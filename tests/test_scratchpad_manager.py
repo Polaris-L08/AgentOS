@@ -1,4 +1,4 @@
-from context.Scratchpad_manager import ScratchpadManager
+from context.scratchpad_manager import ScratchpadManager
 from context.scratchpad_state import ScratchpadState
 
 
