@@ -1,4 +1,4 @@
-
+from pydantic import BaseModelfrom pydantic import version
 ---
 
 # Phase4 Step1：需求分析
@@ -1749,4 +1749,384 @@ God Context
 
 # Phase4 Step4 接口设计
 
+---
+
+# Phase4 Step5 数据模型设计
+
+从这里开始，我们不再讨论概念，而是在确定：
+
+> Runtime State 应该如何表示？
+
+```text
+> State mutable
+> Context immutable
+```
+
+这是一个折中方案。
+
+例如：
+
+HistoryState：
+
+```python
+messages: list[Message]
+```
+
+允许：
+
+```python
+history.messages.append()
+```
+
+但是：
+
+AgentContext 不允许：
+
+```python
+context.history = ...
+```
+
+Context 聚合关系固定。
+
+即：
+```text
+AgentContext
+│
+├── history_state
+├── memory_state
+├── scratchpad_state
+```
+
+不可替换。
+
+内部 State 可修改。
+
+### 领域对象设计
+
+#### Message
+
+Message 是 Value Object。
+
+建议：
+
+```python
+Message
+
+id
+role
+content
+timestamp
+metadata
+```
+
+role：
+
+```python
+USER
+ASSISTANT
+SYSTEM
+TOOL
+```
+
+用 Enum。
+
+不要字符串。
+
+未来：
+
+```python
+THOUGHT
+OBSERVATION
+```
+
+也能扩展。
+
+Message： immutable。
+
+#### MemoryItem
+
+也是 Value Object。
+
+```python
+MemoryItem
+
+id
+
+content
+
+importance
+
+source
+
+timestamp
+```
+
+source：
+
+例如：
+
+```python
+history
+
+tool
+
+reflection
+```
+
+importance：
+
+以后支持：
+
+```python
+forget
+compress
+rank
+```
+
+immutable。
+
+#### Scratchpad
+
+最值得讨论。
+
+不要：
+
+```python
+scratchpad: str
+```
+
+推荐：
+
+```python
+current_goal
+
+hypothesis
+
+next_action
+
+notes
+```
+
+Reflection：
+
+只修改：
+
+```
+hypothesis
+```
+
+而不是整个字符串。
+
+这是结构化推理。
+
+---
+
+### State Model
+
+**HistoryState**
+
+```python
+messages: list[Message]
+```
+
+---
+
+**MemoryState**
+
+```python
+items: list[MemoryItem]
+```
+
+---
+
+**ScratchpadState**
+
+```python
+scratchpad: Scratchpad
+```
+
+---
+
+**WorkspaceState**
+
+```python
+project_root
+
+cwd
+
+current_file
+```
+
+---
+
+**VariableState**
+
+```python
+variables: dict[str, Any]
+```
+
+以后可能：
+
+```VariableValue```
+
+暂时不需要。
+
+---
+
+**MetadataState**
+
+```python
+session_id
+
+created_at
+
+token_usage
+
+cost
+```
+
+---
+
+**ToolCacheState**
+
+```python
+cache: dict[str, ToolResult]
+```
+
+key：
+
+建议：
+
+```python
+tool_name + hash(arguments)
+```
+
+以后支持 TTL。
+
+---
+
+#### AgentContext
+
+这里有一个重要的问题：**直接聚合State** 还是 **再包一层ContextState** ？
+
+方案A:
+
+```python
+class AgentContext:
+    history_state
+
+    memory_state
+
+    scratchpad_state
+
+    workspace_state
+```
+
+方案B:
+
+```python
+class ContextState:
+    history_state
+    memory_state
+    ...
+
+class AgentContext:
+    state: ContextState
+```
+
+未来 AgentContext再引入
+
+```python
+session_id
+version
+agent_id
+...
+```
+
+更推荐：方案B。
+
+这样：
+
+Checkpoint 保存： ```ContextState```
+
+Runtime 保存： ```AgentContext```
+
+边界更清晰。
+
+#### ContextState 与 AgentContext 分离
+
+根据上面的讨论，AgentContext中同时保存了 ContextState 和 Runtime Object。
+
+这样： AgentContext != Serializable State
+
+先确定AgentContext为什么会这样：
+
+最简单的设计下：
+
+```python
+class AgentContext(BaseModel):
+    history: HistoryState
+    memory: MemoryState
+    scratchpad: ScratchpadState
+    workspace: WorkspaceState
+```
+
+Checkpoint:
+
+```python
+save(context)
+```
+
+恢复：
+
+```python
+load(context)
+```
+
+随着系统迭代：
+
+```python
+class AgentContext(BaseModel):
+    state: ContextState
+    config
+    provider
+    event_bus
+    tracer
+    middleware
+    runtime_id
+    agent_id
+```
+
+这里包含了很多**runtime dependency**：
+
+```python
+event_bus
+tracer
+provider
+```
+
+这些不应该被checkpoint。
+
+### Phase4 Step6 编码
+
+目录，建议：
+
+```text
+agentos/
+
+core/
+    agent_context.py
+
+memory/
+    message.py
+
+    history_state.py
+
+    history_manager.py
+
+    context_state.py
+
+tests/
+    test_history_manager.py
+```
 
