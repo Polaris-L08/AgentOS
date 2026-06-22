@@ -2130,3 +2130,24 @@ tests/
     test_history_manager.py
 ```
 
+```text
+History
+↓
+Conversation
+
+Scratchpad
+↓
+Thought
+
+Memory
+↓
+Fact
+
+Workspace
+↓
+Environment
+
+Variables
+↓
+Shared Runtime Data
+```
