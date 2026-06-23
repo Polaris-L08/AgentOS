@@ -1,4 +1,4 @@
-from core.agents.base import AbstractAgent
+from agents.base_agent import AbstractAgent
 from core.context.session import SessionContext
 from core.tools.executor import ToolExecutor
 
