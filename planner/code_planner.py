@@ -1,6 +1,7 @@
 import json
 
 from actions.action import FinishAction, ToolAction
+from context.context_state import ContextState
 from planner.base_planner import BasePlanner
 from providers.llm_provider import PromptMessage
 
@@ -42,19 +43,8 @@ class CodePlanner(BasePlanner):
 
         resp = await self.llm.generate(messages)
 
-        # text = resp.content.strip()
         data = json.loads(resp.content)
 
-        # if text.startswith("FINISH"):
-        #     return FinishAction(answer=text.split(":")[1])
-        #
-        # if text.startswith("TOOL"):
-        #     _, tool, arg = text.split(":")
-        #
-        #     return ToolAction(
-        #         tool_name=tool,
-        #         arguments={"msg": arg}
-        #     )
         if data["type"] == "tool":
             return ToolAction(
                 tool_name=data["tool_name"],
@@ -67,3 +57,42 @@ class CodePlanner(BasePlanner):
             )
 
         return FinishAction(answer="unknown")
+
+    def _build_reflection_section(
+            self,
+            context_state: ContextState
+    ) -> str:
+
+        reflections = (
+            context_state
+            .reflections
+            .reflections
+        )
+
+        if not reflections:
+            return "None"
+
+        sections = []
+
+        for index, reflection in enumerate(
+                reflections,
+                start=1
+        ):
+            suggestions = "\n".join(
+                f"- {item}"
+                for item in reflection.suggestions
+            )
+
+            sections.append(
+                f"""
+    Reflection {index}
+
+    Summary:
+    {reflection.summary}
+
+    Suggestions:
+    {suggestions}
+    """
+            )
+
+        return "\n".join(sections)

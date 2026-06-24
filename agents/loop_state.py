@@ -1,3 +1,4 @@
+from dataclasses import field
 from typing import Optional
 
 from pydantic.dataclasses import dataclass
@@ -15,3 +16,7 @@ class LoopState:
     last_action: Optional[Action] = None
 
     last_observation: Optional[Observation] = None
+
+    observation_history: list[Observation] = field(default_factory=list)
+
+    reflection_count: int = 0
