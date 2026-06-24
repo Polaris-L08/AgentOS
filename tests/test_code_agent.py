@@ -1,17 +1,21 @@
 import asyncio
 
-from actions.mock_executor import MockExecutor
+from actions.action_executor import ActionExecutor
 from agents.code_agent import CodeAgent
-from core.agent_context import AgentContext
 from core.task import Task
+from planner.code_planner import CodePlanner
 from planner.mock_planner import MockPlanner
+from providers.mock_llm_provider import MockLLMProvider
+from tools.tool_executor import ToolExecutor
 
 
 async def test_agent_loop():
 
-    planner = MockPlanner()
+    # planner = MockPlanner()
+    provider = MockLLMProvider()
+    planner = CodePlanner(provider)
 
-    executor = MockExecutor()
+    executor = ActionExecutor(ToolExecutor())
 
     agent = CodeAgent(
         planner,

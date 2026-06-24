@@ -1,4 +1,4 @@
-from core.context.session import SessionContext
+from context.session_context import SessionContext
 from core.tools.registry import ToolRegistry
 from core.tools.request import ToolRequest
 from core.tools.result import ToolResult

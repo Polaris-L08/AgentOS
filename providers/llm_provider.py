@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from providers.llm_response import LLMResponse
 from providers.prompt_message import PromptMessage
 
 

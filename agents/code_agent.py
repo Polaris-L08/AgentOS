@@ -37,7 +37,7 @@ class CodeAgent:
                     answer=action.answer
                 )
 
-            observation = await self.executor.execute(action, context)
+            observation = await self.executor.execute(action)
 
             loop_state.last_observation = observation
 

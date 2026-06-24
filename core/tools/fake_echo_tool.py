@@ -1,6 +1,4 @@
-from typing import Any
-
-from core.context.session import SessionContext
+from context.session_context import SessionContext
 from core.tools.base import AbstractTool
 from core.tools.patch import ContextPatch
 from core.tools.result import ToolResult
