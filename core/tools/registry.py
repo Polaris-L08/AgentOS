@@ -4,7 +4,7 @@ from core.tools.exceptions import ToolNotFoundError
 
 class ToolRegistry:
     """
-    A registry for tools.
+    A registry for single_tools.
     """
 
     def __init__(self):

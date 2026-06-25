@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 from actions.action import FinishAction, ToolAction
@@ -108,12 +106,12 @@ async def test_reflect_once_then_finish():
     assert critic.call_count == 1
 
     assert len(
-        context.reflections.reflections
+        context.reflections_state.reflections
     ) == 1
 
     assert (
         context
-        .reflections
+        .reflections_state
         .reflections[0]
         .summary
         == "boundary error"

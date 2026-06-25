@@ -21,7 +21,7 @@ class ToolPolicy:
 
 class AbstractTool(ABC):
     """
-    Abstract class for all tools.
+    Abstract class for all single_tools.
     """
 
     @property

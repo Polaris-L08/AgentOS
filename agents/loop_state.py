@@ -11,11 +11,11 @@ from actions.observation import Observation
 class LoopState:
     step_count: int = 0
 
-    finished: bool = False
+    # finished: bool = False
 
     last_action: Optional[Action] = None
 
-    last_observation: Optional[Observation] = None
+    # last_observation: Optional[Observation] = None
 
     observation_history: list[Observation] = field(default_factory=list)
 

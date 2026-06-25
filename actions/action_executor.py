@@ -1,7 +1,7 @@
 from actions.action import ToolAction, FinishAction
 from actions.observation import Observation
-from tools.tool_executor import ToolExecutor
-from tools.tool_request import ToolRequest
+from core.tools.executor import ToolExecutor
+from core.tools.request import ToolRequest
 
 
 class ActionExecutor:
@@ -9,7 +9,7 @@ class ActionExecutor:
     def __init__(self, tool_executor: ToolExecutor):
         self.tool_executor = tool_executor
 
-    async def execute(self, action) -> Observation:
+    async def execute(self, action, context) -> Observation:
 
         if isinstance(action, ToolAction):
 
@@ -19,6 +19,11 @@ class ActionExecutor:
             )
 
             result = await self.tool_executor.execute(request)
+
+            # apply patch
+            if result.patch:
+                for patch in result.patch:
+                    context.apply_patch(patch)
 
             return Observation(
                 success=result.success,

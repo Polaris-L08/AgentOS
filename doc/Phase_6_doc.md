@@ -375,12 +375,11 @@ while True:
     observations.append(observation)
 
     if observation.failed:
-
         reflection = critic.reflect(
             observations
         )
 
-        context_state.reflection_state.reflections.append(
+        context_state.reflection_state.reflections_state.append(
             reflection
         )
 ```

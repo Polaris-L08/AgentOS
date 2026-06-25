@@ -12,4 +12,4 @@ class ToolResult(BaseModel):
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    patch: ContextPatch | None = None
+    patch: list[ContextPatch] | None = None

@@ -65,7 +65,7 @@ class CodePlanner(BasePlanner):
 
         reflections = (
             context_state
-            .reflections
+            .reflections_state
             .reflections
         )
 

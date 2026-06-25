@@ -1,10 +1,10 @@
-from tools.tool_request import ToolRequest
-from tools.tool_result import ToolResult
+from single_tools.tool_request import ToolRequest
+from single_tools.tool_result import ToolResult
 
 
 class ToolExecutor:
 
-    async def execute(selfself, request: ToolRequest) -> ToolResult:
+    async def execute(self, request: ToolRequest) -> ToolResult:
 
         if request.tool_name == "echo":
             return ToolResult(
