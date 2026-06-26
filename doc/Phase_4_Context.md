@@ -1,6 +1,3 @@
-from pydantic import BaseModelfrom pydantic import version
----
-
 # Phase4 Step1：需求分析
 
 这一阶段先不写代码。
