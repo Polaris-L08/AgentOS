@@ -1,9 +1,9 @@
 import pytest
 
-from agents.loop_state import LoopState
-from checkpoint import MemoryCheckpointStore, Checkpoint
-from context.context_state import ContextState
-from core.task_request import TaskRequest
+from runtime.loop.loop_state import LoopState
+from runtime.checkpoint import MemoryCheckpointStore, Checkpoint
+from runtime.context import ContextState
+from models.task_request import TaskRequest
 
 @pytest.mark.asyncio
 async def test_save_and_load_checkpoint():

@@ -1,10 +1,10 @@
 import pytest
 
-from actions.action import FinishAction, ToolAction
+from models.action import FinishAction, ToolAction
 from actions.observation import Observation
 from agents.code_agent import CodeAgent
-from context.context_state import ContextState
-from core.task import Task
+from runtime.context import ContextState
+from models.task import Task
 from reflection.reflection import Reflection
 from tests.mocks.mock_action_executor import MockActionExecutor
 from tests.mocks.mock_critic_agent import MockCriticAgent

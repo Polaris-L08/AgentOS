@@ -1,7 +1,7 @@
-from actions.action import ToolAction, FinishAction
+from models.action import ToolAction, FinishAction
 from actions.observation import Observation
-from core.tools.executor import ToolExecutor
-from core.tools.request import ToolRequest
+from tools import ToolExecutor
+from tools import ToolRequest
 
 
 class ActionExecutor:

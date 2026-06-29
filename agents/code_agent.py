@@ -1,10 +1,9 @@
-from actions.action import FinishAction
-from agents import loop_state
-from agents.loop_state import LoopState
-from checkpoint import CheckpointStore, Checkpoint
-from context.context_state import ContextState
-from core.task_request import TaskRequest
-from core.task_result import TaskResult
+from models.action import FinishAction
+from runtime.loop.loop_state import LoopState
+from runtime.checkpoint import CheckpointStore, Checkpoint
+from runtime.context import ContextState
+from models.task_request import TaskRequest
+from models.task_result import TaskResult
 
 
 class CodeAgent:
@@ -56,7 +55,7 @@ class CodeAgent:
                     answer=action.answer
                 )
 
-            observation = await self.executor.execute(action)
+            observation = await self.executor.execute(action, context)
 
             loop_state.observation_history.append(observation)
 

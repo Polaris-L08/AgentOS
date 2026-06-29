@@ -1,6 +1,6 @@
 from typing import List
 
-from event.event import Event
+from runtime.events.event import Event
 
 
 class RecordingSubscriber:

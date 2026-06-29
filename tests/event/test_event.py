@@ -1,10 +1,10 @@
 import pytest
 
-from core.tools.executor import ToolExecutor
-from core.tools.registry import ToolRegistry
-from core.tools.request import ToolRequest
-from event.event import Event
-from event.event_bus import EventBus
+from tools import ToolExecutor
+from tools.registry import ToolRegistry
+from tools import ToolRequest
+from runtime.events.event import Event
+from runtime.events import EventBus
 from tests.event.recording_subscriber import RecordingSubscriber
 
 

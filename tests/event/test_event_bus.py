@@ -1,6 +1,6 @@
-from event.event import Event
-from event.event_bus import EventBus
-from event.subscriber import EventSubscriber
+from runtime.events.event import Event
+from runtime.events import EventBus
+from runtime.events.subscriber import EventSubscriber
 
 
 class DummySubscriber(EventSubscriber):

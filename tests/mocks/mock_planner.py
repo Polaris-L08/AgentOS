@@ -1,4 +1,4 @@
-from actions.action import Action
+from models.action import Action
 
 
 class MockPlanner:
