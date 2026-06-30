@@ -31,4 +31,22 @@ class TraceContext:
         """
         now = datetime.now(timezone.utc)
 
-        span = self.recorder.start_span()
+        span = self.recorder.start_span(trace=self.trace, name=name, start_time=now, parent_span_id=parent_span_id)
+
+        self.current_span_id = span.span_id
+
+        return span
+
+    def end_span(self, status: str = "success") -> None:
+        """
+        End current span.
+        """
+
+        now = datetime.now(timezone.utc)
+
+        self.recorder.end_span(
+            trace=self.trace,
+            span_id=self.current_span_id,
+            end_time=now,
+            status=status
+        )

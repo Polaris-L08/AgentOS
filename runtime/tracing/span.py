@@ -34,7 +34,7 @@ class Span:
 
     start_time: datetime
 
-    end_time: datetime | None
+    end_time: datetime | None = None
 
     status: SpanStatus = SpanStatus.RUNNING
 
