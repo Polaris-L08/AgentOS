@@ -25,16 +25,20 @@ class Trace:
 
     end_time: datetime | None = None
 
-    spans: Dict[str, Span] = field(default_factory=dict)
+    _spans: Dict[str, Span] = field(default_factory=dict)
 
     def add_span(self, span: Span) -> None:
         """
-                Register a span into this trace.
+        Register a span into this trace.
 
-                Args:
-                    span: Span instance to be added.
-                """
-        self.spans[span.span_id] = span
+        Args:
+            span: Span instance to be added.
+        """
+        self._spans[span.span_id] = span
+
+    def has_span(self, span_id: str) -> bool:
+        """Return whether the span exists."""
+        return span_id in self._spans
 
     def get_span(self, span_id: str) -> Optional[Span]:
         """
@@ -46,7 +50,7 @@ class Trace:
         Returns:
             Span or None if not found.
         """
-        return self.spans.get(span_id)
+        return self._spans.get(span_id)
 
     def all_spans(self) -> list[Span]:
         """
@@ -55,7 +59,11 @@ class Trace:
         Returns:
             List of spans (unordered).
         """
-        return list(self.spans.values())
+        return list(self._spans.values())
+
+    @property
+    def span_count(self) -> int:
+        return len(self._spans)
 
     @property
     def duration_ms(self) -> float | None:

@@ -23,7 +23,7 @@ class TraceRecorder:
         Create and register a new span.
         """
 
-        span_id = f"span-{len(trace.spans) + 1}"
+        span_id = f"span-{trace.span_count + 1}"
 
         span = Span(
             span_id=span_id,
@@ -42,22 +42,20 @@ class TraceRecorder:
                  trace: Trace,
                  span_id: str | None,
                  end_time: datetime,
-                 status: str
-                 ) -> None:
+                 status: SpanStatus
+                 ) -> Span | None:
         """
         Finalize span.
         """
 
         if span_id is None:
-            return
+            return None
 
         span = trace.get_span(span_id)
         if span is None:
-            return
+            return None
 
         span.end_time = end_time
+        span.status = status
 
-        if status == "success":
-            span.status = SpanStatus.SUCCESS
-        else:
-            span.status = SpanStatus.ERROR
+        return span
