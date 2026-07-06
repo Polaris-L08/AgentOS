@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from runtime.context import ContextState
+from runtime.context.context_state import ContextState
 from runtime.middleware.runtime_operation import RuntimeOperation
 
 

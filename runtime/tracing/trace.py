@@ -19,7 +19,7 @@ class Trace:
 
     trace_id: str
 
-    root_span_id: str
+    root_span_id: str | None = None
 
     start_time: datetime
 
@@ -35,6 +35,9 @@ class Trace:
             span: Span instance to be added.
         """
         self._spans[span.span_id] = span
+
+        if self.root_span_id is None:
+            self.root_span_id = span.span_id
 
     def has_span(self, span_id: str) -> bool:
         """Return whether the span exists."""
