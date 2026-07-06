@@ -19,7 +19,7 @@ class RuntimeContext:
     - loop control state
     """
 
-    context: ContextState
+    state: ContextState
 
     trace: TraceContext
 
@@ -30,7 +30,7 @@ class RuntimeContext:
         Create a shallow copy for isolated execution scopes.
         """
         return RuntimeContext(
-            context=self.context,
+            state=self.state,
             trace=self.trace,
             loop=self.loop
         )
