@@ -3,6 +3,7 @@ from typing import Iterable, Any
 from runtime.context.context_state import ContextState
 from runtime.middleware.base_middleware import Middleware
 from runtime.middleware.runtime_operation import RuntimeOperation
+from runtime.runtime_context import RuntimeContext
 
 
 class MiddlewareChain:
@@ -16,7 +17,7 @@ class MiddlewareChain:
     async def before(
         self,
         operation: RuntimeOperation,
-        runtime_context: ContextState,
+        runtime_context: RuntimeContext,
     ) -> None:
         for middleware in self._middlewares:
             await middleware.before(operation, runtime_context)
@@ -24,7 +25,7 @@ class MiddlewareChain:
     async def after(
         self,
         operation: RuntimeOperation,
-        runtime_context: ContextState,
+        runtime_context: RuntimeContext,
         result: Any,
     ) -> None:
         for middleware in reversed(self._middlewares):
@@ -37,7 +38,7 @@ class MiddlewareChain:
     async def on_error(
         self,
         operation: RuntimeOperation,
-        runtime_context: ContextState,
+        runtime_context: RuntimeContext,
         error: Exception,
     ) -> None:
         for middleware in reversed(self._middlewares):

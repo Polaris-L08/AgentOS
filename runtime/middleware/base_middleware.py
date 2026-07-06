@@ -3,6 +3,7 @@ from typing import Any
 
 from runtime.context.context_state import ContextState
 from runtime.middleware.runtime_operation import RuntimeOperation
+from runtime.runtime_context import RuntimeContext
 
 
 class Middleware(ABC):
@@ -11,7 +12,7 @@ class Middleware(ABC):
     async def before(
         self,
         operation: RuntimeOperation,
-        runtime_context: ContextState,
+        runtime_context: RuntimeContext,
     ) -> None:
         ...
 
@@ -19,7 +20,7 @@ class Middleware(ABC):
     async def after(
         self,
         operation: RuntimeOperation,
-        runtime_context: ContextState,
+        runtime_context: RuntimeContext,
         result: Any,
     ) -> None:
         ...
@@ -28,7 +29,7 @@ class Middleware(ABC):
     async def on_error(
         self,
         operation: RuntimeOperation,
-        runtime_context: ContextState,
+        runtime_context: RuntimeContext,
         error: Exception,
     ) -> None:
         ...
