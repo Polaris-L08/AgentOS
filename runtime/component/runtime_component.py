@@ -9,22 +9,28 @@ T = TypeVar("T")
 
 class RuntimeComponent(ABC):
     """
-    Base runtime component.
+    Base class for runtime components.
 
-    Provides unified middleware lifecycle:
+    RuntimeComponent provides a unified execution boundary
+    with middleware lifecycle support.
 
-        before
-          |
-        execute
-          |
-        after/error
+    Responsibilities:
 
-    Runtime components:
-        - Agent
-        - ToolExecutor
-        - Planner Runtime
-        - Memory Runtime
-        - etc.
+    - execute middleware before hook
+    - execute component operation
+    - execute middleware after hook
+    - execute middleware error hook
+
+    It does NOT define business behavior.
+
+    Examples:
+
+        AgentRuntime
+        ToolExecutor
+        MemoryRuntime
+        WorkflowRuntime
+
+    can inherit this abstraction.
     """
 
     def __init__(self, middleware_chain: MiddlewareChain | None = None):
@@ -38,6 +44,41 @@ class RuntimeComponent(ABC):
             *args: Any,
             **kwargs: Any
     ) -> T:
+        """
+        Execute a runtime operation with middleware lifecycle.
+
+        Flow:
+
+            before()
+
+              ↓
+
+            func()
+
+              ↓
+
+            after()
+
+
+        Error:
+
+            func()
+
+              ↓
+
+            on_error()
+
+              ↓
+
+            raise
+
+
+        RuntimeComponent does not transform
+        business exceptions.
+
+        Business components decide whether an
+        exception represents a domain failure.
+        """
         if self._middleware_chain is None:
             return await func(*args, **kwargs)
 
@@ -54,4 +95,3 @@ class RuntimeComponent(ABC):
             await self._middleware_chain.after(operation, runtime_context, result)
             return result
 
-    
