@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from runtime.tracing.span import Span, SpanStatus
 from runtime.tracing.trace import Trace
@@ -17,7 +18,8 @@ class TraceRecorder:
                    trace: Trace,
                    name: str,
                    start_time: datetime,
-                   parent_span_id: str | None
+                   parent_span_id: str | None,
+                   metadata: dict[str, Any] | None
                    ) -> Span:
         """
         Create and register a new span.
@@ -30,7 +32,8 @@ class TraceRecorder:
             trace_id=trace.trace_id,
             name=name,
             start_time=start_time,
-            parent_span_id=parent_span_id
+            parent_span_id=parent_span_id,
+            metadata=metadata or {}
         )
 
         trace.add_span(span)

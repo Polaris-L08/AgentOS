@@ -1,9 +1,9 @@
 import json
 
 from models.action import FinishAction, ToolAction
-from runtime.context import ContextState
 from planner.base_planner import BasePlanner
 from providers.llm_provider import PromptMessage
+from runtime.context.context_state import ContextState
 
 
 class CodePlanner(BasePlanner):

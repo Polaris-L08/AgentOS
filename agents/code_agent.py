@@ -1,39 +1,78 @@
+import uuid
+from datetime import datetime, timezone
+from typing import TypeVar, Any, Callable, Awaitable
+
 from models.action import FinishAction
+from runtime.context.context_state import ContextState
+from runtime.context.runtime_context import RuntimeContext
 from runtime.loop.loop_state import LoopState
 from runtime.checkpoint import CheckpointStore, Checkpoint
-from runtime.context import ContextState
 from models.task_request import TaskRequest
 from models.task_result import TaskResult
+from runtime.middleware.middleware_chain import MiddlewareChain
+from runtime.middleware.runtime_operation import RuntimeOperation
+from runtime.tracing.trace import Trace
+from runtime.tracing.trace_context import TraceContext
+from runtime.tracing.trace_recorder import TraceRecorder
 
+T = TypeVar("T")
 
 class CodeAgent:
 
-    def __init__(self, planner, executor, critic_agent, checkpoint_store: CheckpointStore = None):
+    def __init__(self, planner, executor, critic_agent, checkpoint_store: CheckpointStore = None,
+                 middleware_chain: MiddlewareChain | None = None):
         self.planner = planner
         self.executor = executor
         self.max_steps = 10
         self._critic_agent = critic_agent
         self._max_reflections = 3
         self._checkpoint_store = checkpoint_store
+        self._middleware_chain = middleware_chain
 
-    async def run(self, task, context) -> TaskResult:
+        self.last_runtime_context: RuntimeContext | None = None
+
+    async def run(self, task, context) -> TaskResult | None:
 
         loop_state = LoopState()
 
-        return await self._run_loop(task, context, loop_state)
+        runtime_context = self._create_runtime_context(context, loop_state)
 
+        self.last_runtime_context = runtime_context
+
+        return await self._run_loop(task, runtime_context)
+
+    async def resume(self, checkpoint: Checkpoint) -> TaskResult | None:
+        if isinstance(checkpoint.loop_state.last_action, FinishAction):
+
+            return TaskResult(
+                success=True,
+                answer=checkpoint.loop_state.last_action.answer
+            )
+
+        runtime_context = self._create_runtime_context(
+            checkpoint.context_state,
+            checkpoint.loop_state,
+        )
+
+        return await self._run_loop(
+            checkpoint.task_request,
+            runtime_context
+        )
 
     async def _run_loop(self,
                         task: TaskRequest,
-                        context: ContextState,
-                        loop_state: LoopState
-                        ) -> TaskResult:
+                        runtime_context: RuntimeContext
+                        ) -> TaskResult | None:
+
+        context = runtime_context.state
+        loop_state = runtime_context.loop
+
         while True:
 
             if loop_state.step_count >= self.max_steps:
                 return TaskResult(
                     success=False,
-                    observation="Max steps reached"
+                    answer="Max steps reached"
                 )
 
             last_observation = (
@@ -42,7 +81,19 @@ class CodeAgent:
                 else None
             )
 
-            action = await self.planner.plan(task, context, last_observation)
+            # action = await self.planner.plan(task, context, last_observation)
+            action = await self._invoke_runtime_operation(
+                RuntimeOperation(
+                    name="planner.plan",
+                    component="planner",
+                    metadata={}
+                ),
+                runtime_context,
+                self.planner.plan,
+                task,
+                context,
+                last_observation
+            )
 
             if isinstance(action, FinishAction):
                 loop_state.last_action = action
@@ -55,7 +106,18 @@ class CodeAgent:
                     answer=action.answer
                 )
 
-            observation = await self.executor.execute(action, context)
+            # observation = await self.executor.execute(action, context)
+            observation = await self._invoke_runtime_operation(
+                RuntimeOperation(
+                    name="tool.execute",
+                    component="executor",
+                    metadata={}
+                ),
+                runtime_context,
+                self.executor.execute,
+                action,
+                context
+            )
 
             loop_state.observation_history.append(observation)
 
@@ -71,13 +133,23 @@ class CodeAgent:
                 if loop_state.reflection_count >= self._max_reflections:
                     return TaskResult(
                         success=False,
-                        observation=(
+                        answer=(
                             f"Max reflections exceeded "
                             f"({self._max_reflections})"
                         )
                     )
 
-                reflection = await self._critic_agent.reflect(
+                # reflection = await self._critic_agent.reflect(
+                #     loop_state.observation_history
+                # )
+                reflection = await self._invoke_runtime_operation(
+                    RuntimeOperation(
+                        name="reflection.reflect",
+                        component="critic",
+                        metadata={}
+                    ),
+                    runtime_context,
+                    self._critic_agent.reflect,
                     loop_state.observation_history
                 )
 
@@ -105,16 +177,47 @@ class CodeAgent:
         )
         await self._checkpoint_store.save(task_request.task_id, checkpoint)
 
-    async def resume(self, checkpoint: Checkpoint) -> TaskResult:
-        if isinstance(checkpoint.loop_state.last_action, FinishAction):
+    def _create_runtime_context(self, context: ContextState, loop_state: LoopState) -> RuntimeContext:
+        trace = Trace(trace_id=str(uuid.uuid4()), start_time=datetime.now(timezone.utc))
 
-            return TaskResult(
-                success=True,
-                answer=checkpoint.loop_state.last_action.answer
-            )
+        trace_context = TraceContext(recorder=TraceRecorder(), trace=trace)
 
-        return await self._run_loop(
-            checkpoint.task_request,
-            checkpoint.context_state,
-            checkpoint.loop_state
+        return RuntimeContext(
+            state=context,
+            trace=trace_context,
+            loop=loop_state
         )
+
+    async def _invoke_runtime_operation(
+            self,
+            operation: RuntimeOperation,
+            runtime_context: RuntimeContext,
+            func: Callable[..., Awaitable[T]],
+            *args: Any,
+            **kwargs: Any
+    ) -> T:
+        if self._middleware_chain is None:
+            return await func(*args, **kwargs)
+
+        await self._middleware_chain.before(
+            operation=operation,
+            runtime_context=runtime_context
+        )
+
+        try:
+            result = await func(*args, **kwargs)
+
+        except Exception as e:
+            await self._middleware_chain.on_error(
+                operation=operation,
+                runtime_context=runtime_context,
+                error=e
+            )
+            raise
+        else:
+            await self._middleware_chain.after(
+                operation=operation,
+                runtime_context=runtime_context,
+                result=result
+            )
+            return result

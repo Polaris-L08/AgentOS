@@ -12,7 +12,8 @@ class MockActionExecutor:
 
     async def execute(
         self,
-        action
+        action,
+        context = None
     ) -> Observation:
 
         observation = self._observations[self._index]

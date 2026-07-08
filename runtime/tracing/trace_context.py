@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 
 from runtime.tracing.span import Span, SpanStatus
 from runtime.tracing.trace import Trace
@@ -56,7 +56,7 @@ class TraceContext:
 
         return self._span_stack.pop()
 
-    def start_span(self, name: str) -> Span:
+    def start_span(self, name: str, metadata: dict[str, Any] | None = None) -> Span:
         """
         Start a child span of the current active span.
         """
@@ -66,7 +66,8 @@ class TraceContext:
             trace=self.trace,
             name=name,
             parent_span_id=self.current_span_id,
-            start_time=now
+            start_time=now,
+            metadata=metadata or {}
         )
 
         self._push_span(span_id=span.span_id)
