@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from runtime.context.session_context import SessionContext
+from runtime.context.context_state import ContextState
 from tools.result import ToolResult
 
 
@@ -46,6 +46,6 @@ class AbstractTool(ABC):
     async def execute(
             self,
             input: Any,
-            context: SessionContext
+            context: ContextState
     ) -> ToolResult:
         ...

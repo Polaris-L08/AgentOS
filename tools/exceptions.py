@@ -5,3 +5,6 @@ class ToolNotFoundError(Exception):
         super().__init__(f"Tool {tool_name} not found")
 
         self.tool_name = tool_name
+
+class ToolExecutionError(Exception):
+    pass

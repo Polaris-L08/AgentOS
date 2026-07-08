@@ -41,24 +41,6 @@ class CodeAgent:
 
         return await self._run_loop(task, runtime_context)
 
-    async def resume(self, checkpoint: Checkpoint) -> TaskResult | None:
-        if isinstance(checkpoint.loop_state.last_action, FinishAction):
-
-            return TaskResult(
-                success=True,
-                answer=checkpoint.loop_state.last_action.answer
-            )
-
-        runtime_context = self._create_runtime_context(
-            checkpoint.context_state,
-            checkpoint.loop_state,
-        )
-
-        return await self._run_loop(
-            checkpoint.task_request,
-            runtime_context
-        )
-
     async def _run_loop(self,
                         task: TaskRequest,
                         runtime_context: RuntimeContext
@@ -161,6 +143,24 @@ class CodeAgent:
                 await self._save_checkpoint(task, context, loop_state)
 
                 continue
+
+    async def resume(self, checkpoint: Checkpoint) -> TaskResult | None:
+        if isinstance(checkpoint.loop_state.last_action, FinishAction):
+
+            return TaskResult(
+                success=True,
+                answer=checkpoint.loop_state.last_action.answer
+            )
+
+        runtime_context = self._create_runtime_context(
+            checkpoint.context_state,
+            checkpoint.loop_state,
+        )
+
+        return await self._run_loop(
+            checkpoint.task_request,
+            runtime_context
+        )
 
     async def _save_checkpoint(self,
                                task_request: TaskRequest,

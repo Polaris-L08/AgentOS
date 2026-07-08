@@ -1,60 +1,58 @@
-from runtime.context import ContextState
+from runtime.component.runtime_component import RuntimeComponent
+from runtime.context.runtime_context import RuntimeContext
+from runtime.middleware.middleware_chain import MiddlewareChain
 from tools import tool_event
+from tools.exceptions import ToolExecutionError
 from tools.registry import ToolRegistry
 from tools.request import ToolRequest
 from tools.result import ToolResult
 from runtime.events.publisher import EventPublisher
-from runtime.middleware import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
 
 
-class ToolExecutor:
+class ToolExecutor(RuntimeComponent):
 
     def __init__(self, registry: ToolRegistry, publisher: EventPublisher, middleware_chain: MiddlewareChain | None = None):
+        super().__init__(middleware_chain)
         self.registry = registry
         self._publisher = publisher
-        self._middleware_chain = middleware_chain
 
     async def execute(
             self,
             request: ToolRequest,
-            context: ContextState
+            context: RuntimeContext
     ) -> ToolResult:
-        operation = RuntimeOperation(
-            name="execute",
-            component="tool_executor",
-            metadata={
-                "tool": request.tool_name
-            }
+        return await self.invoke(
+            RuntimeOperation(
+                name="tool.execute",
+                component="tool_executor",
+                metadata={
+                    "tool": request.tool_name
+                }
+            ),
+            context,
+            self._execute,
+            request,
+            context
         )
 
-        await self._middleware_chain.before(operation, context)
-
-        result = None
+    async def _execute(self, request: ToolRequest, runtime_context: RuntimeContext):
+        context = runtime_context.state
 
         try:
             tool = self.registry.get(request.tool_name)
+            result = await tool.execute(input=request.arguments, context=context)
 
-            result = await tool.execute(
-                input=request.arguments,
-                context=context
-            )
-
-            self._publish_tool_event(request, result)
-
-            await self._middleware_chain.after(operation, context, result)
-
-        except Exception as e:
-
+        except ToolExecutionError as e:
             result = ToolResult(
                 success=False,
                 output=None,
                 error=str(e)
             )
+        except Exception as e:
+            raise
 
-            self._publish_tool_event(request, result)
-
-            await self._middleware_chain.on_error(operation, context, error=e)
+        self._publish_tool_event(request, result)
 
         return result
 
