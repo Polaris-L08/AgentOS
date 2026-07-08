@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import TypeVar, Any, Callable, Awaitable
 
 from models.action import FinishAction
+from runtime.component import RuntimeComponent
 from runtime.context.context_state import ContextState
 from runtime.context.runtime_context import RuntimeContext
 from runtime.loop.loop_state import LoopState
@@ -17,17 +18,18 @@ from runtime.tracing.trace_recorder import TraceRecorder
 
 T = TypeVar("T")
 
-class CodeAgent:
+class CodeAgent(RuntimeComponent):
 
     def __init__(self, planner, executor, critic_agent, checkpoint_store: CheckpointStore = None,
                  middleware_chain: MiddlewareChain | None = None):
+        super().__init__(middleware_chain)
+
         self.planner = planner
         self.executor = executor
         self.max_steps = 10
         self._critic_agent = critic_agent
         self._max_reflections = 3
         self._checkpoint_store = checkpoint_store
-        self._middleware_chain = middleware_chain
 
         self.last_runtime_context: RuntimeContext | None = None
 
@@ -64,7 +66,7 @@ class CodeAgent:
             )
 
             # action = await self.planner.plan(task, context, last_observation)
-            action = await self._invoke_runtime_operation(
+            action = await self.invoke(
                 RuntimeOperation(
                     name="planner.plan",
                     component="planner",
@@ -73,7 +75,7 @@ class CodeAgent:
                 runtime_context,
                 self.planner.plan,
                 task,
-                context,
+                runtime_context,
                 last_observation
             )
 
@@ -89,7 +91,7 @@ class CodeAgent:
                 )
 
             # observation = await self.executor.execute(action, context)
-            observation = await self._invoke_runtime_operation(
+            observation = await self.invoke(
                 RuntimeOperation(
                     name="tool.execute",
                     component="executor",
@@ -98,7 +100,7 @@ class CodeAgent:
                 runtime_context,
                 self.executor.execute,
                 action,
-                context
+                runtime_context
             )
 
             loop_state.observation_history.append(observation)
@@ -124,7 +126,7 @@ class CodeAgent:
                 # reflection = await self._critic_agent.reflect(
                 #     loop_state.observation_history
                 # )
-                reflection = await self._invoke_runtime_operation(
+                reflection = await self.invoke(
                     RuntimeOperation(
                         name="reflection.reflect",
                         component="critic",
@@ -187,37 +189,3 @@ class CodeAgent:
             trace=trace_context,
             loop=loop_state
         )
-
-    async def _invoke_runtime_operation(
-            self,
-            operation: RuntimeOperation,
-            runtime_context: RuntimeContext,
-            func: Callable[..., Awaitable[T]],
-            *args: Any,
-            **kwargs: Any
-    ) -> T:
-        if self._middleware_chain is None:
-            return await func(*args, **kwargs)
-
-        await self._middleware_chain.before(
-            operation=operation,
-            runtime_context=runtime_context
-        )
-
-        try:
-            result = await func(*args, **kwargs)
-
-        except Exception as e:
-            await self._middleware_chain.on_error(
-                operation=operation,
-                runtime_context=runtime_context,
-                error=e
-            )
-            raise
-        else:
-            await self._middleware_chain.after(
-                operation=operation,
-                runtime_context=runtime_context,
-                result=result
-            )
-            return result

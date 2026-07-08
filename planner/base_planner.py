@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 
 from models.action import Action
 from actions.observation import Observation
-from runtime.loop.agent_context import AgentContext
 from models.task import Task
+from runtime.context.runtime_context import RuntimeContext
 
 
 class BasePlanner(ABC):
@@ -12,7 +12,7 @@ class BasePlanner(ABC):
     async def plan(
         self,
         task: Task,
-        context: AgentContext,
+        context: RuntimeContext,
         observation: Observation | None
     ) -> Action:
         pass
