@@ -52,24 +52,29 @@ class ToolExecutor(RuntimeComponent):
         except Exception as e:
             raise
 
-        self._publish_tool_event(request, result)
+        self._publish_tool_event(request, result, runtime_context)
 
         return result
 
     def _publish_tool_event(
             self,
             request: ToolRequest,
-            result: ToolResult
+            result: ToolResult,
+            runtime_context: RuntimeContext
     ):
         try:
             if result.success:
                 event = tool_event.tool_executed(
-                    tool_name=request.tool_name
+                    tool_name=request.tool_name,
+                    trace_id=runtime_context.trace.trace.trace_id,
+                    span_id=runtime_context.trace.current_span_id
                 )
             else:
                 event = tool_event.tool_failed(
                     tool_name=request.tool_name,
-                    error=str(result.error) if result.error else ""
+                    error=str(result.error) if result.error else "",
+                    trace_id=runtime_context.trace.trace.trace_id,
+                    span_id=runtime_context.trace.current_span_id
                 )
 
             self._publisher.emit(event)

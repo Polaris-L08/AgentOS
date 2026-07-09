@@ -26,3 +26,9 @@ class Event:
     timestamp: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
+
+    # tracing metadata
+
+    trace_id: str | None = None
+
+    span_id: str | None = None
