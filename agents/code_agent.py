@@ -33,11 +33,11 @@ class CodeAgent(RuntimeComponent):
 
         self.last_runtime_context: RuntimeContext | None = None
 
-    async def run(self, task, context) -> TaskResult | None:
+    async def run(self, task, runtime_context: RuntimeContext) -> TaskResult | None:
 
-        loop_state = LoopState()
-
-        runtime_context = self._create_runtime_context(context, loop_state)
+        # loop_state = LoopState()
+        #
+        # runtime_context = self._create_runtime_context(context, loop_state)
 
         self.last_runtime_context = runtime_context
 
