@@ -5,7 +5,7 @@ class MockCriticAgent:
 
     def __init__(
         self,
-        reflection: Reflection
+        reflection: Reflection = None
     ):
         self.call_count = 0
 
