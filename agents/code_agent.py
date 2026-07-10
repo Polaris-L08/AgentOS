@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TypeVar, Any, Callable, Awaitable
 
+from actions.observation import Observation
 from models.action import FinishAction
 from runtime.component import RuntimeComponent
 from runtime.context.context_state import ContextState
@@ -60,20 +61,24 @@ class CodeAgent(RuntimeComponent):
                 if loop_state.observation_history
                 else None
             )
-
-            # action = await self.planner.plan(task, context, last_observation)
-            action = await self.invoke(
-                RuntimeOperation(
-                    name="planner.plan",
-                    component="planner",
-                    metadata={}
-                ),
-                runtime_context,
-                self.planner.plan,
-                task,
-                runtime_context,
-                last_observation
-            )
+            try:
+                action = await self.invoke(
+                    RuntimeOperation(
+                        name="planner.plan",
+                        component="planner",
+                        metadata={}
+                    ),
+                    runtime_context,
+                    self.planner.plan,
+                    task,
+                    runtime_context,
+                    last_observation
+                )
+            except Exception as e:
+                return TaskResult(
+                    success=False,
+                    answer=f"Planner failed: {e}"
+                )
 
             if isinstance(action, FinishAction):
                 loop_state.last_action = action
@@ -86,18 +91,20 @@ class CodeAgent(RuntimeComponent):
                     answer=action.answer
                 )
 
-            # observation = await self.executor.execute(action, context)
-            observation = await self.invoke(
-                RuntimeOperation(
-                    name="tool.execute",
-                    component="executor",
-                    metadata={}
-                ),
-                runtime_context,
-                self.executor.execute,
-                action,
-                runtime_context
-            )
+            try:
+                observation = await self.invoke(
+                    RuntimeOperation(
+                        name="tool.execute",
+                        component="executor",
+                        metadata={}
+                    ),
+                    runtime_context,
+                    self.executor.execute,
+                    action,
+                    runtime_context
+                )
+            except Exception as e:
+                observation = Observation(success=False, content=str(e))
 
             loop_state.observation_history.append(observation)
 
@@ -108,20 +115,21 @@ class CodeAgent(RuntimeComponent):
             # Save checkpoint
             await self._save_checkpoint(task, context, loop_state)
 
-            if not observation.success:
+            # Tool Success
+            if observation.success:
+                continue
 
-                if loop_state.reflection_count >= self._max_reflections:
-                    return TaskResult(
-                        success=False,
-                        answer=(
-                            f"Max reflections exceeded "
-                            f"({self._max_reflections})"
-                        )
+            # Tool Failure
+            if loop_state.reflection_count >= self._max_reflections:
+                return TaskResult(
+                    success=False,
+                    answer=(
+                        f"Max reflections exceeded "
+                        f"({self._max_reflections})"
                     )
+                )
 
-                # reflection = await self._critic_agent.reflect(
-                #     loop_state.observation_history
-                # )
+            try:
                 reflection = await self.invoke(
                     RuntimeOperation(
                         name="reflection.reflect",
@@ -132,15 +140,15 @@ class CodeAgent(RuntimeComponent):
                     self._critic_agent.reflect,
                     loop_state.observation_history
                 )
+            except Exception as e:
+                reflection = None
 
+            if reflection:
                 context.reflections_state.reflections.append(reflection)
-
                 loop_state.reflection_count += 1
 
-                # Save checkpoint
-                await self._save_checkpoint(task, context, loop_state)
-
-                continue
+            # Save checkpoint
+            await self._save_checkpoint(task, context, loop_state)
 
     async def resume(self, checkpoint: Checkpoint) -> TaskResult | None:
         if isinstance(checkpoint.loop_state.last_action, FinishAction):
