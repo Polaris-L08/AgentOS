@@ -12,6 +12,7 @@ from runtime.tracing.trace_formatter import TraceFormatter
 from runtime.tracing.trace_recorder import TraceRecorder
 from tests.mocks.mock_critic_agent import MockCriticAgent
 from tests.mocks.mock_failed_tool import MockFailedTool
+from tests.mocks.mock_planer_failed import MockPlannerException
 from tests.mocks.mock_planner import MockPlanner
 from tools.executor import ToolExecutor
 from tools.registry import ToolRegistry
@@ -91,3 +92,54 @@ async def test_runtime_failure_should_record_error_trace():
     )
 
 
+@pytest.mark.asyncio
+async def test_planner_failure_should_fail_task():
+    registry = ToolRegistry()
+
+    registry.register(MockFailedTool())
+
+    event_bus = EventBus()
+
+    middleware_chain = MiddlewareChain(
+        [
+            TracingMiddleware()
+        ]
+    )
+
+    executor = ToolExecutor(registry, event_bus, middleware_chain)
+
+    planner = MockPlannerException(
+        RuntimeError(
+            "llm timeout"
+        )
+    )
+
+    critic = MockCriticAgent()
+
+    agent = CodeAgent(
+        planner,
+        executor,
+        critic
+    )
+
+    task = TaskRequest(task_id="planner-failure-test", user_input="test planner failure")
+
+    execution_runtime = ExecutionRuntime(trace_recorder=TraceRecorder())
+
+    runtime_context = execution_runtime.create_context(ContextState())
+
+    result = await agent.run(
+        task,
+        runtime_context
+    )
+
+
+    assert result.success is False
+
+    assert (
+        "Planner failed"
+        in result.answer
+    )
+    report = TraceFormatter().format(runtime_context.trace.trace)
+
+    print(report)

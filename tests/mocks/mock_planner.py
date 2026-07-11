@@ -1,7 +1,8 @@
 from models.action import Action
+from planner.base_planner import BasePlanner
 
 
-class MockPlanner:
+class MockPlanner(BasePlanner):
 
     def __init__(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 from runtime.context.context_state import ContextState
@@ -19,6 +20,8 @@ class RuntimeContext:
     - loop control state
     """
 
+    runtime_id: str
+
     state: ContextState
 
     trace: TraceContext
@@ -30,6 +33,7 @@ class RuntimeContext:
         Create a shallow copy for isolated execution scopes.
         """
         return RuntimeContext(
+            runtime_id=self.runtime_id,
             state=self.state,
             trace=self.trace,
             loop=self.loop
