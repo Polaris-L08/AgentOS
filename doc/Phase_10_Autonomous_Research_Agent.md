@@ -161,7 +161,120 @@ Plan层在以下场景下考虑引入：
  - Human-in-the-loop： 需要人类专家介入的场景。展示Plan，然后等待用户确认。
  - Multi-Agent: 多Agent协作
 
-## Step 3： ResearchAgent Core Architecture 设计
+## Step 3： Agent Execution Model Design
 
+目标是确定：
 
+> Runtime、Agent、Planner、Executor、Reflection 的最终职责边界。
 
+核心问题：
+
+> 如何从 Single Agent Runtime 演进到 Autonomous Agent Framework，而不会退化为 Workflow Engine。
+
+模型：
+
+```text
+                Runtime Kernel
+                     |
+                     |
+          Agent Execution Runtime
+                     |
+                     |
+                   Agent
+                     |
+        +------------+------------+
+        |            |            |
+     Planner     Reflection    Memory
+        |
+        |
+    AgentDecision
+        |
+        |
+     Executor
+        |
+        |
+      Tools
+```
+
+### Runtime Kernel
+
+> 负责可靠执行
+
+包括：
+
+ - RuntimeContext
+ - Middleware
+ - Trace
+ - Checkpoint
+ - EventBus
+ - Exception Boundary
+
+### Agent Execution Runtime
+
+> 负责驱动 Agent 运行
+
+负责：
+
+ - 调用 Agent
+ - 管理生命周期
+ - 连接 Runtime Kernel
+ - 调度 Action
+
+### Agent
+
+> Agent 是决策主体
+
+决定下一步做什么
+
+### Planner
+
+属于Agent，因为不同Agent的规划方式不同
+
+### Reflection
+
+属于Agent，不是**Runtime 每次执行后调用 Reflection**， 而是**Agent 根据需要反思**
+
+例如：
+
+```text
+Observation
+↓
+Reflection
+↓
+发现缺少数据
+↓
+生成新 Task
+```
+
+### Executor
+
+Executor 属于执行能力。 它负责：
+
+```text
+Decision
+↓
+Action
+↓
+Tool
+```
+
+例如：
+
+```text
+Agent: 我要获取财务数据
+
+Executor: 调用 FinancialTool
+```
+
+### AgentOS 与 LangGraph 的区别
+
+| ---  | LangGraph | AgentOS        |
+|------|-----------|----------------|
+| 核心抽象 | Graph     | Agent Decision |
+| 控制主体 | Graph     | Agent          |
+| 节点   | Agent     | 能力模块           |
+| 流程来源 | Develop定义 | Agent产生        |
+| 动态范围 | Graph范围内  | Agent能力范围内     |
+| 重点   | 编排        | 自治             |
+
+## Step 4： 
