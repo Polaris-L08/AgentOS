@@ -1,16 +1,16 @@
 import uuid
 from datetime import datetime, timezone
-from typing import TypeVar, Any, Callable, Awaitable
+from typing import TypeVar
 
 from actions.observation import Observation
+from agents.base_agent import BaseAgent
 from models.action import FinishAction
-from runtime.component import RuntimeComponent
+from models.task_request import TaskRequest
+from models.task_result import TaskResult
+from runtime.checkpoint import CheckpointStore, Checkpoint
 from runtime.context.context_state import ContextState
 from runtime.context.runtime_context import RuntimeContext
 from runtime.loop.loop_state import LoopState
-from runtime.checkpoint import CheckpointStore, Checkpoint
-from models.task_request import TaskRequest
-from models.task_result import TaskResult
 from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
 from runtime.tracing.trace import Trace
@@ -19,11 +19,11 @@ from runtime.tracing.trace_recorder import TraceRecorder
 
 T = TypeVar("T")
 
-class CodeAgent(RuntimeComponent):
+class CodeAgent(BaseAgent):
 
     def __init__(self, planner, executor, critic_agent, checkpoint_store: CheckpointStore = None,
                  middleware_chain: MiddlewareChain | None = None):
-        super().__init__(middleware_chain)
+        super().__init__(name="code_agent", middleware_chain=middleware_chain)
 
         self.planner = planner
         self.executor = executor
@@ -144,24 +144,19 @@ class CodeAgent(RuntimeComponent):
                 reflection = None
 
             if reflection:
-                context.reflections_state.reflections.append(reflection)
+                context.reflection.append(reflection)
                 loop_state.reflection_count += 1
 
             # Save checkpoint
             await self._save_checkpoint(task, context, loop_state)
 
-    async def resume(self, checkpoint: Checkpoint) -> TaskResult | None:
+    async def resume(self, checkpoint: Checkpoint, runtime_context: RuntimeContext) -> TaskResult | None:
         if isinstance(checkpoint.loop_state.last_action, FinishAction):
 
             return TaskResult(
                 success=True,
                 answer=checkpoint.loop_state.last_action.answer
             )
-
-        runtime_context = self._create_runtime_context(
-            checkpoint.context_state,
-            checkpoint.loop_state,
-        )
 
         return await self._run_loop(
             checkpoint.task_request,
@@ -183,13 +178,3 @@ class CodeAgent(RuntimeComponent):
         )
         await self._checkpoint_store.save(task_request.task_id, checkpoint)
 
-    def _create_runtime_context(self, context: ContextState, loop_state: LoopState) -> RuntimeContext:
-        trace = Trace(trace_id=str(uuid.uuid4()), start_time=datetime.now(timezone.utc))
-
-        trace_context = TraceContext(recorder=TraceRecorder(), trace=trace)
-
-        return RuntimeContext(
-            state=context,
-            trace=trace_context,
-            loop=loop_state
-        )

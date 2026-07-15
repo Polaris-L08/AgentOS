@@ -32,3 +32,13 @@ class Event:
     trace_id: str | None = None
 
     span_id: str | None = None
+
+    # multi-agent
+
+    # source 是事件产生来源组件，如：tool_executor/middleware/checkpoint_manager
+    # sender 是Agent通信中的发送者，如：research_agent
+    sender: str | None = None
+
+    receiver: str | None = None
+
+    correlation_id: str | None = None
