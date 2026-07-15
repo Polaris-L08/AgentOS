@@ -1,43 +1,11 @@
 from pydantic import BaseModel, Field
 
-from runtime.context.history_state import HistoryState
-from runtime.context.memory_state import MemoryState
-from runtime.context.scratchpad_state import ScratchpadState
-from runtime.context.variable_state import VariableState
-from runtime.context.workspace_state import WorkspaceState
-from tools.patch import ContextPatch
-from reflection.reflection_state import ReflectionState
+from runtime.context.agent_state import AgentState
 
 
 class ContextState(BaseModel):
 
-    history_state: HistoryState = Field(default_factory=HistoryState)
+    agent_context: AgentState = Field(default_factory=AgentState)
 
-    scratchpad_state: ScratchpadState = Field(default_factory=ScratchpadState)
-
-    memory_state: MemoryState = Field(default_factory=MemoryState)
-
-    workspace_state: WorkspaceState = Field(default_factory=WorkspaceState)
-
-    variables_state: VariableState = Field(default_factory=VariableState)
-
-    reflections_state: ReflectionState = Field(default_factory=ReflectionState)
-
-    def apply_patch(self, patch: ContextPatch) -> "ContextState":
-
-        if patch.target == "workspace":
-            self.workspace_state = self.workspace_state.apply(patch)
-
-        elif patch.target == "memory":
-            self.memory_state = self.memory_state.apply(patch)
-
-        elif patch.target == "history":
-            self.history_state = self.history_state.apply(patch)
-
-        elif patch.target == "variable":
-            self.variables_state = self.variables_state.apply(patch)
-
-        elif patch.target == "scratchpad":
-            self.scratchpad_state = self.scratchpad_state.apply(patch)
-
-        return self
+    # 业务领域
+    domain_context: BaseModel | None

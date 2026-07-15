@@ -1,5 +1,3 @@
-import uuid
-from datetime import datetime, timezone
 from typing import TypeVar
 
 from actions.observation import Observation
@@ -13,9 +11,6 @@ from runtime.context.runtime_context import RuntimeContext
 from runtime.loop.loop_state import LoopState
 from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
-from runtime.tracing.trace import Trace
-from runtime.tracing.trace_context import TraceContext
-from runtime.tracing.trace_recorder import TraceRecorder
 
 T = TypeVar("T")
 
@@ -144,7 +139,7 @@ class CodeAgent(BaseAgent):
                 reflection = None
 
             if reflection:
-                context.reflection.append(reflection)
+                context.agent_context.reflection_state.reflections.append(reflection)
                 loop_state.reflection_count += 1
 
             # Save checkpoint
