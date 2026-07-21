@@ -78,3 +78,164 @@ AgentInstance 描述： 哪个具体运行实体
 Runtime 描述： 如何运行
 ```
 
+### AgentRuntime 和 ExecutionRuntime
+
+```text
+AgentDefinition
+    描述 Agent 类型
+
+AgentInstance
+    一个真实存在的 Agent
+
+BaseAgent
+    Agent 行为实现
+```
+
+关系：
+
+```text
+AgentDefinition
+        |
+        | create
+        v
+AgentInstance
+        |
+        | bind
+        v
+BaseAgent
+```
+
+**AgentRuntime**负责管理AgentInstance的生命周期。
+
+ - Agent Creation
+ - Agent Registration
+ - Lifecycle Management
+ - Agent Availability
+ - Agent Recovery
+
+在Phase 9 中创建的ExecutionRuntime是负责创建一次执行环境。 负责管理：
+
+ - Trace
+ - RuntimeContext
+ - LoopState
+ - Checkpoint
+
+对比：
+
+|        | AgentRuntime  | ExecutionRuntime |
+|--------|---------------|------------------|
+| 管理对象   | AgentInstance | Execution        |
+| 生命周期   | 长生命周期         | 短生命周期            |
+| 是否持久存在 | 是             | 否                |
+| 状态     | Agent State   | Execution State  |
+| 负责创建   | Agent         | Context          |
+| 负责恢复   | Agent         | Task             |
+
+### 完整 Multi-Agent Runtime 流程
+
+1. Scheduler 接收任务： Need Research capability
+2. 查询Registry： ResearchAgent-001
+3. AgentRuntime 确认 Agent available
+4. 创建 Execution： Execution-001
+5. ExecutionRuntime创建：RuntimeContext、Trace、Checkpoint
+6. 调用BaseAgent.execute()
+
+```text
+User Task
+   |
+Scheduler
+   |
+AgentRuntime
+   |
+AgentInstance
+   |
+ExecutionRuntime
+   |
+RuntimeContext
+   |
+BaseAgent
+   |
+Tool
+```
+
+最终结构：
+
+```text
+             AgentRuntime
+                  |
+          管理 Agent
+                  |
+        +---------+---------+
+        |                   |
+ ResearchAgent-001    RiskAgent-001
+        |
+        |
+    一个任务来了
+        |
+        v
+   ExecutionRuntime
+        |
+        v
+   RuntimeContext
+        |
+        v
+    BaseAgent代码
+```
+
+```text
+ResearchAgentDefinition
+
+        creates
+
+ResearchAgentInstance
+
+        uses
+
+ResearchAgent(BaseAgent)
+
+        executes
+
+ExecutionRuntime
+
+        runs
+
+Task
+```
+
+| **对象**           | **解决的问题**   |
+|------------------|-------------|
+| AgentDefinition  | 这个Agent是什么  |
+| AgentInstance    | 哪个具体Agent存在 |
+| BaseAgent        | 这个Agent怎么工作 |
+| ExecutionRuntime | 一次任务怎么可靠执行  |
+
+
+### Step 1 完整模型总结
+
+```text
+                    AgentDefinition
+                         |
+                         |
+                      create
+                         v
+                  AgentInstance
+                         |
+              +----------+----------+
+              |                     |
+        Lifecycle State       Agent Context
+                         |
+                      bind
+                         v
+                  BaseAgent
+                         |
+                      execute
+                         v
+                ExecutionRuntime
+                         |
+                         v
+                    Execution
+                         |
+                         v
+                  RuntimeContext
+```
+

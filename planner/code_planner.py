@@ -8,8 +8,6 @@ from runtime.context.context_state import ContextState
 
 class CodePlanner(BasePlanner):
 
-    # def __init__(self, provider: LLMProvider):
-    #     self.provider = provider
     def __init__(self, llm):
         self.llm = llm
 

@@ -896,7 +896,7 @@ Action 是 VO。
 
 Planner 应该是 Stateless。
 
-**AgentState**
+**AgentContext**
 
 不需要。
 

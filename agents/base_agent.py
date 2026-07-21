@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
 
+from agents.identity import AgentIdentity
 from runtime.component import RuntimeComponent
 from runtime.context.runtime_context import RuntimeContext
 
 
 class BaseAgent(RuntimeComponent, ABC):
-    def __init__(self, name: str, middleware_chain = None):
+    def __init__(self, identity: AgentIdentity, middleware_chain = None):
         super().__init__(middleware_chain)
-        self.name = name
+        self.identity = identity
 
     @abstractmethod
     async def run(

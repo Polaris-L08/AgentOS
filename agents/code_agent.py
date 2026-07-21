@@ -2,6 +2,7 @@ from typing import TypeVar
 
 from actions.observation import Observation
 from agents.base_agent import BaseAgent
+from agents.identity import AgentIdentity
 from models.action import FinishAction
 from models.task_request import TaskRequest
 from models.task_result import TaskResult
@@ -16,9 +17,9 @@ T = TypeVar("T")
 
 class CodeAgent(BaseAgent):
 
-    def __init__(self, planner, executor, critic_agent, checkpoint_store: CheckpointStore = None,
+    def __init__(self, identity: AgentIdentity, planner, executor, critic_agent, checkpoint_store: CheckpointStore = None,
                  middleware_chain: MiddlewareChain | None = None):
-        super().__init__(name="code_agent", middleware_chain=middleware_chain)
+        super().__init__(identity=identity, middleware_chain=middleware_chain)
 
         self.planner = planner
         self.executor = executor

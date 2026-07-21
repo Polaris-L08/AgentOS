@@ -8,7 +8,7 @@ from runtime.context.variable_state import VariableState
 from runtime.context.workspace_state import WorkspaceState
 
 
-class AgentState(BaseModel):
+class AgentContext(BaseModel):
 
     memory_state: MemoryState = Field(default_factory=MemoryState)
 
