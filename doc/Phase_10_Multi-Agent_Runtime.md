@@ -550,3 +550,385 @@ shared_context.get(
 )
 ```
 
+#### 当前的Multi-Agent架构：
+
+```text
+                         User
+                          |
+                          v
+                  SupervisorAgent
+                          |
+                    AgentMessage
+                          |
+                  MessageRouter
+                          |
+                  AgentRegistry
+                          |
+          +---------------+---------------+
+          |                               |
+   ResearchAgent                    RiskAgent
+          |                               |
+          +---------------+---------------+
+                          |
+                  SharedContext
+                          |
+                    ReportAgent
+```
+
+### 1.5 Supervisor Agent —— Multi-Agent系统的大脑
+
+Supervisor的本质是**项目经理**。 Supervisor不是干活儿的人，它负责：
+
+- 理解任务
+- 拆解任务
+- 分配任务
+- 汇总任务
+
+与Planner的区别：
+
+| ---  | **Planner** | **Supervisor** |
+|------|-------------|----------------|
+| 作用范围 | Agent内部     | Agent之间        |
+| 对象   | Action      | Agent          |
+| 输出   | 步骤          | 任务分配           |
+| 位置   | BaseAgent内部 | Multi-Agent层   |
+
+#### Supervior核心流程
+
+第一版：
+
+```text
+User Task
+    |
+    v
+SupervisorAgent
+    |
+    |
+Task Decomposition
+    |
+    +-------------+
+    |             |
+ResearchTask  RiskTask
+    |             |
+    v             v
+ResearchAgent RiskAgent
+```
+
+输入： 
+
+```json
+{
+    "task": "Analyze Apple"
+}
+```
+
+输出：
+
+```json
+[
+ {
+  "agent": "research",
+  "task": "collect financial data"
+ },
+ {
+  "agent": "risk",
+  "task": "analyze risk"
+ }
+]
+```
+
+然后通过 `AgentMessageRouter` 发送 Message。
+
+#### Supervior和Workflow的关系
+
+**Workflow**控制`系统流程`
+
+**Supervior**控制`Agent选择`
+
+更进一步的解释是：
+
+Workflow 确定性控制
+
+> 负责 Durable Execution 和生命周期控制
+
+- Execution lifecycle
+- State transition
+- Checkpoint
+- Retry
+- Timeout
+- Persistence
+
+Supervisor 概率性决策
+
+> 负责 Dynamic Agent Orchestration
+
+- Agent selection
+- Task decomposition
+- Collaboration strategy
+- Dynamic planning
+
+在工业系统中，一般会结合两者。
+
+如果**流程已知**，不要Supervisor。如：季度财报分析。
+
+如果**任务未知**，需要Supervisor。如：用户说，帮我分析这个公司。
+
+最终：
+
+```text
+              Workflow Runtime
+                     |
+                     |
+             Supervisor Agent
+                     |
+          Agent Task Planning
+                     |
+       +-------------+-------------+
+       |             |             |
+ Research       Risk        Report
+ Agent          Agent       Agent
+```
+
+### 1.6 从Single-Agent Runtime 到 Multi-Agent Runtime
+
+Multi-Agent Runtime 最终分层：
+
+```text
+                    User
+                     |
+                     v
+              Workflow Runtime
+          (Durability / State)
+                     |
+                     v
+          Supervisor Agent (optional)
+                     |
+             Agent Planning
+                     |
+              Agent Scheduler
+                     |
+        +------------+------------+
+        |            |            |
+        v            v            v
+ ResearchAgent   RiskAgent   ReportAgent
+        |            |            |
+        +------------+------------+
+                     |
+              SharedContext
+                     |
+                EventBus
+                     |
+        Observability / Memory / Metrics
+```
+
+这里有3个控制层：
+
+第一层： Workflow Runtime 负责 **可靠执行**。
+
+第二层： Supervisor 负责 **智能决策**
+
+第三层： Agent 负责 **领域能力**
+
+#### 真实任务流程
+
+用户输入： `分析Apple是否值得投资`
+
+##### Step 1： 
+
+创建 `TaskRequest`
+
+Workflow创建： `WorkflowState` 例如：
+
+```python
+class InvestmentState:
+
+    company="Apple"
+
+    status="START"
+```
+
+然后进入 `Supervisor Node`
+
+##### Step 2： Supervisor 分析任务
+
+Supervisor继承 BaseAgent，所以执行仍然经过：
+
+```text
+RuntimeComponent
+↓
+Middleware
+↓
+Tracing
+↓
+Agent
+```
+
+Supervisor内部调用Planner，可能有两层Planner：
+
+**Workflow Planner**： 决定 下一阶段是什么。
+
+**Agent Planner**： 决定 自己怎么完成任务。
+
+Supervisor Planner 示例输出：
+
+```json
+[
+ {
+   "agent":"research",
+   "task":"collect financial data"
+ },
+ {
+   "agent":"risk",
+   "task":"analyze risk"
+ }
+]
+```
+
+##### Step 3: Agent Scheduler
+
+Supervisor只产生**任务计划**，但是谁什么时候执行需要调度。 例如： Supervisor 输出 Research Task、 Risk Task。
+
+Scheduler 发现两个任务没有依赖关系，可以并行：
+
+```text
+ResearchAgent
+
+        \
+         \
+          Scheduler
+        /
+RiskAgent
+
+```
+
+##### Step 4: Agent Message
+
+Scheduler 创建 Agent Message。例如：
+
+Research:
+
+```python
+AgentMessage(
+
+ sender="supervisor",
+
+ receiver="research",
+
+ type="TASK",
+
+ payload={
+    "company":"Apple"
+ }
+
+)
+```
+
+通过`MessageRouter.send()`发送。
+
+流程：
+
+```text
+Scheduler
+    |
+AgentMessage
+    |
+MessageRouter
+    |
+AgentRegistry
+    |
+ResearchAgent
+```
+
+##### Step 5： ResearchAgent执行
+
+继承BaseAgent, 执行链：
+
+```text
+ResearchAgent
+        |
+RuntimeComponent
+        |
+Middleware
+        |
+Tracing
+        |
+Planner
+        |
+ToolExecutor
+        |
+Observation
+        |
+Reflection
+        |
+Checkpoint
+```
+
+##### Step 6: 共享结果
+
+ResearchAgent 得到：
+
+```json
+{
+ "revenue_growth":8,
+ "margin":45
+}
+```
+
+写入： `SharedContext.set("financial_analysis", result)`
+
+然后发布： `ResearchCompletedEvent`，进入： `EventBus`。
+
+##### Step 7: RiskAgent
+
+RiskAgent 收到：`ResearchCompletedEvent`或`AgentMessage`，开始执行。
+
+读取：`SharedContext.get("financial_analysis")`
+
+生成： `{"risk_level": "medium"}` 继续写入： `SharedContext`。
+
+##### Step 8: ReportAgent
+
+ReportAgent 收到 `RiskCompletedEvent`
+
+读取：
+
+```text
+SharedContext
+financial_analysis
+risk_analysis
+```
+
+生成：`Investment Report`
+
+##### Step 9: Workflow 收敛
+
+最终 Workflow State 更新：`state.status="COMPLETED"`，保存 Checkpoint。
+
+整个链路：
+
+```text
+User
+ |
+Workflow Runtime
+ |
+Supervisor Agent
+ |
+Agent Scheduler
+ |
+AgentMessage
+ |
+ResearchAgent
+ |
+SharedContext
+ |
+RiskAgent
+ |
+SharedContext
+ |
+ReportAgent
+ |
+Workflow Complete
+ |
+Checkpoint
+```
+
