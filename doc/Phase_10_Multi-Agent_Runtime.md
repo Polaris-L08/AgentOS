@@ -1118,3 +1118,46 @@ ResearchAgent： visited_sources/research_notes/analysis_history
 
 
 ### 
+
+## Step 3: Checkpoint Runtime 边界迁移
+
+在Multi-Agent下，Checkpoint模型变成
+
+```text
+ExecutionCheckpoint
+
+    runtime_id
+
+    RuntimeState
+
+        trace metadata
+
+        shared context
+
+    AgentExecutions
+
+        agent_id
+
+        execution state
+
+        loop state
+```
+
+当前目标： 增加 `AgentExecutionCheckpoint`
+
+完成后结构：
+
+```text
+                 Checkpoint
+                    |
+        +-----------+------------+
+        |                        |
+ Runtime Snapshot          Agent Snapshots
+
+ shared_context            ResearchAgent
+
+ trace metadata            RiskAgent
+
+                           ReportAgent
+```
+

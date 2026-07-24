@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from runtime.context.runtime_context import RuntimeContext
-from runtime.loop.loop_state import LoopState
 from runtime.tracing.trace import Trace
 from runtime.tracing.trace_context import TraceContext
 from runtime.tracing.trace_recorder import TraceRecorder
@@ -13,14 +12,16 @@ class ExecutionRuntime:
 
     trace_recorder: TraceRecorder
 
-    def create_context(self, state) -> RuntimeContext:
+    def create_context(self) -> RuntimeContext:
         """
-        Create runtime execution context.
+        Create RuntimeContext.
 
-        Lifecycle owner of:
-        - Trace
-        - Root span
-        - RuntimeContext
+        Runtime owns:
+
+        - trace
+        - shared execution space
+
+        Agent state is created later by AgentExecutionContext.
         """
 
         trace = Trace(trace_id=self._create_id(), start_time=datetime.now(timezone.utc))
@@ -29,7 +30,7 @@ class ExecutionRuntime:
 
         trace_context.start_span(name="agent.run", metadata={"type": "root"})
 
-        return RuntimeContext(state=state, trace=trace_context, loop=LoopState())
+        return RuntimeContext(trace=trace_context)
 
     async def close(self, runtime_context: RuntimeContext):
         """

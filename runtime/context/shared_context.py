@@ -1,11 +1,11 @@
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class SharedContext:
 
-    data: dict[str, Any] = field(default_factory=dict)
+class SharedContext(BaseModel):
+
+    data: dict[str, Any] = Field(default_factory=dict)
 
     def set(self, key: str, value: Any):
         self.data[key] = value

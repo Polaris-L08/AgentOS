@@ -1,15 +1,14 @@
 from copy import deepcopy
-from dataclasses import field
+
 from typing import Optional
 
-from pydantic.dataclasses import dataclass
+from pydantic import BaseModel, Field
 
-from models.action import Action
 from actions.observation import Observation
+from models.action import Action
 
 
-@dataclass
-class LoopState:
+class LoopState(BaseModel):
     step_count: int = 0
 
     # finished: bool = False
@@ -18,17 +17,13 @@ class LoopState:
 
     # last_observation: Optional[Observation] = None
 
-    observation_history: list[Observation] = field(default_factory=list)
+    observation_history: list[Observation] = Field(default_factory=list)
 
     reflection_count: int = 0
 
     def copy(self) -> "LoopState":
         """
-        Create isolated loop state.
-
-        Used when one Agent invokes another Agent.
-
-        Child Agent must not modify parent's execution loop.
+        Create an isolated loop state copy.
         """
 
         return LoopState(

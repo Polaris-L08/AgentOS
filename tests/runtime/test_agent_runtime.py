@@ -8,6 +8,7 @@ from agents.base_agent import BaseAgent
 from agents.identity import AgentIdentity
 from agents.result import AgentResult
 from models.task_request import TaskRequest
+from runtime.context import AgentExecutionContext
 from runtime.context.agent_context import AgentContext
 
 from runtime.context.runtime_context import RuntimeContext
@@ -24,10 +25,10 @@ class MockAgent(BaseAgent):
     """
 
     async def run(
-        self,
-        task,
-        runtime_context: RuntimeContext
-    ) -> AgentResult:
+            self,
+            task,
+            agent_execution_context: AgentExecutionContext
+    ):
 
         return AgentResult(
             success=True,
@@ -46,7 +47,7 @@ def create_runtime_context() -> RuntimeContext:
     """
     trace_recorder = TraceRecorder()
     execution_runtime = ExecutionRuntime(trace_recorder)
-    execution_context = execution_runtime.create_context(state=ContextState())
+    execution_context = execution_runtime.create_context()
 
     return execution_context
 

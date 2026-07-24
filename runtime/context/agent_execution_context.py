@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from agents.identity import AgentIdentity
+from runtime.checkpoint.checkpoint import AgentCheckpoint
 from runtime.context.context_state import ContextState
 from runtime.context.runtime_context import RuntimeContext
 from runtime.loop.loop_state import LoopState
@@ -48,3 +49,11 @@ class AgentExecutionContext:
         """
 
         return cls(runtime_context, agent_identity, ContextState(), LoopState())
+
+    def create_checkpoint(self) -> AgentCheckpoint:
+
+        return AgentCheckpoint(
+            agent_id=self.agent_identity.agent_id,
+            state=self.state,
+            loop=self.loop,
+        )

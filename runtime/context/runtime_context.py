@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from runtime.context.context_state import ContextState
+from runtime.context.shared_context import SharedContext
 from runtime.loop.loop_state import LoopState
 from runtime.tracing.trace_context import TraceContext
 
@@ -12,47 +13,38 @@ from runtime.tracing.trace_context import TraceContext
 @dataclass(slots=True, frozen=True)
 class RuntimeContext:
     """
-    Unified runtime execution context.
+    Runtime level execution context.
 
-    This is the ONLY object passed into Middleware layer.
-    It aggregates all orthogonal runtime concerns:
-    - semantic agent state
-    - tracing state
-    - loop control state
+    Lifecycle:
+
+        one user request
+        one workflow execution
+
+
+    Shared by all Agents participating
+    in the same execution.
+
+    It does NOT own Agent private state.
+
+    Agent private state belongs to:
+
+        AgentExecutionContext
     """
-
-    state: ContextState
 
     trace: TraceContext
 
-    loop: LoopState
+    shared_context: SharedContext = field(default_factory=SharedContext)
 
-    runtime_id: str = str(uuid.uuid4())
+    runtime_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
-    def fork(self) -> "RuntimeContext":
-        """
-        Create child Agent execution context.
+    # -------------------------------------------------
+    # Migration compatibility fields
+    #
+    # Deprecated:
+    # These fields will be removed after
+    # AgentExecutionContext migration finishes.
+    # -------------------------------------------------
 
-        Isolation rules:
+    state: ContextState | None = None
 
-        Shared:
-            TraceContext
-
-        Copy:
-            ContextState
-            LoopState
-
-        Reason:
-
-            Multiple Agents share
-            execution trace,
-
-            but they have independent
-            reasoning state and loop state.
-        """
-        return RuntimeContext(
-            runtime_id=self.runtime_id,
-            state=deepcopy(self.state),
-            trace=self.trace,
-            loop=self.loop.copy()
-        )
+    loop: LoopState | None = None

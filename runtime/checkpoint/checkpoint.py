@@ -1,23 +1,47 @@
-from datetime import datetime
+import uuid
 
 from pydantic import BaseModel, Field
 
-from runtime.loop.loop_state import LoopState
 from runtime.context.context_state import ContextState
-from models.task_request import TaskRequest
+from runtime.context.shared_context import SharedContext
+from runtime.loop.loop_state import LoopState
 
+
+class AgentCheckpoint(BaseModel):
+    """
+    Checkpoint for one Agent execution.
+
+    Lifecycle:
+        AgentExecutionContext
+                |
+            checkpoint
+    """
+    agent_id: str
+
+    status: str = "RUNNING"
+
+    state: ContextState
+
+    loop: LoopState
 
 class Checkpoint(BaseModel):
     """
-    Runtime Snapshot
+    Runtime Snapshot.
+
+    Stores:
+        Runtime shared state
+        Agent execution states
     """
+    checkpoint_id: str = Field(default_factory=lambda : str(uuid.uuid4()))
 
-    version: int = 1
+    runtime_id: str
 
-    task_request: TaskRequest
+    shared_context: SharedContext
 
-    loop_state: LoopState
+    agents: dict[str, AgentCheckpoint] = Field(default_factory=dict)
 
-    context_state: ContextState
+    # backward compatibility
 
-    create_at: datetime = Field(default_factory=datetime.utcnow)
+    task_id: str
+
+    # create_at: datetime = Field(default_factory=datetime.utcnow)
