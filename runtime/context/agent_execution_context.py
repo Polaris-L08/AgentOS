@@ -50,10 +50,11 @@ class AgentExecutionContext:
 
         return cls(runtime_context, agent_identity, ContextState(), LoopState())
 
-    def create_checkpoint(self) -> AgentCheckpoint:
+    @classmethod
+    def restore(cls, runtime_context: RuntimeContext, agent_identity: AgentIdentity,
+                checkpoint: AgentCheckpoint) -> "AgentExecutionContext":
+        """
+        Restore Agent execution from checkpoint.
+        """
 
-        return AgentCheckpoint(
-            agent_id=self.agent_identity.agent_id,
-            state=self.state,
-            loop=self.loop,
-        )
+        return cls(runtime_context, agent_identity, checkpoint.state, checkpoint.loop)
