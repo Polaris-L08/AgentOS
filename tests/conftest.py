@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+import pytest
+
+from runtime.events.event_bus import EventBus
+
+from runtime.context.runtime_context import RuntimeContext
+from runtime.context.context_state import ContextState
+from runtime.execution.execution_runtime import ExecutionRuntime
+from runtime.loop.loop_state import LoopState
+from runtime.tracing.trace_context import TraceContext
+from runtime.tracing.trace_recorder import TraceRecorder
+
+
+@pytest.fixture
+def event_bus():
+
+    return EventBus()
+
+
+
+@pytest.fixture
+def runtime_context():
+    trace_recorder = TraceRecorder()
+    execution_runtime = ExecutionRuntime(trace_recorder)
+    runtime_context = execution_runtime.create_context(state=ContextState())
+    return runtime_context

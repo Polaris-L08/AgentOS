@@ -1,8 +1,8 @@
 from agents.base_agent import BaseAgent
-from agents.code_agent import CodeAgent
+from .result import AgentResult
 
 
 __all__ = [
     "BaseAgent",
-    "CodeAgent",
+    "AgentResult"
 ]

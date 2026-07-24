@@ -1,10 +1,10 @@
 import pytest
 
+from runtime.events.event_bus import EventBus
 from tools import ToolExecutor
 from tools.registry import ToolRegistry
 from tools import ToolRequest
 from runtime.events.event import Event
-from runtime.events import EventBus
 from tests.event.recording_subscriber import RecordingSubscriber
 
 

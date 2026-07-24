@@ -932,3 +932,189 @@ Workflow Complete
 Checkpoint
 ```
 
+## Step 2： Multi-Agent Execution Runtime
+
+### State/Context 的职责边界
+
+#### 第一类： Execution Runtime State
+
+##### RuntimeContext
+
+> 当前一次执行过程中的运行环境
+
+生命周期：
+
+```text
+一次执行开始
+↓
+创建 RuntimeContext
+↓
+Agent / Tool / Middleware 使用
+↓
+Execution结束
+↓
+销毁
+```
+
+例如： 
+
+用户输入：分析Tesla股票。
+
+启动 runtime_id=A001 整个任务的 Supervisor、ResearchAgent、RiskAgent、ReportAgent 都是A001。
+
+即：
+
+```text
+Runtime Execution
+        |
+        |
+        +--- Supervisor Agent
+        |
+        +--- Research Agent
+        |
+        +--- Risk Agent
+```
+
+#### 第二类： Trace State
+
+##### TraceContext
+
+> 观察执行路径。（谁调用谁、耗时多少、哪里失败）
+
+生命周期：
+
+```text
+Runtime开始
+↓
+创建Trace
+↓
+所有组件共享
+↓
+Runtime结束
+↓
+保存Trace
+```
+
+例如：
+
+```text
+trace_id=001
+
+Supervisor Agent span
+        |
+        |
+        Research Agent span
+        |
+        |
+        Tool span
+```
+
+#### 第三类：Execution Loop State
+
+##### LoopState
+
+生命周期：
+
+```text
+Agent执行循环
+↓
+step++
+↓
+action
+↓
+observation
+↓
+结束
+```
+
+> LoopState 属于 Agent Execution，不属于整个Runtime。
+
+#### 第四类：Agent State
+
+##### Agent Private State
+
+生命周期：
+
+```text
+Agent实例
+↓
+执行
+↓
+更新
+↓
+Checkpoint保存
+↓
+恢复
+```
+
+例如：
+
+ResearchAgent： visited_sources/research_notes/analysis_history
+
+完全隔离。
+
+#### 整体结构
+
+```text
+                                 User Request
+                                      |
+                                      |
+                                      v
+                         +----------------------+
+                         |   ExecutionRuntime   |
+                         +----------------------+
+                                      |
+                                      |
+                                      v
+                         +----------------------+
+                         |   RuntimeContext     |
+                         |----------------------|
+                         | runtime_id           |
+                         |                      |
+                         | TraceContext         |
+                         | Event Context        |
+                         | SharedContext        |
+                         | Execution Metadata   |
+                         +----------------------+
+                                      |
+                                      |
+                 +--------------------+--------------------+
+                 |                    |                    |
+                 v                    v                    v
+        +----------------+   +----------------+   +----------------+
+        | Supervisor     |   | ResearchAgent  |   | RiskAgent      |
+        | Execution      |   | Execution      |   | Execution      |
+        +----------------+   +----------------+   +----------------+
+                 |                    |                    |
+                 |                    |                    |
+                 v                    v                    v
+        +----------------+   +----------------+   +----------------+
+        |AgentExecution  |   |AgentExecution  |   |AgentExecution  |
+        |Context         |   |Context         |   |Context         |
+        +----------------+   +----------------+   +----------------+
+        |                |   |                |   |                |
+        | AgentIdentity  |   | AgentIdentity  |   | AgentIdentity  |
+        |                |   |                |   |                |
+        | AgentContext   |   | AgentContext   |   | AgentContext   |
+        |                |   |                |   |                |
+        | LoopState      |   | LoopState      |   | LoopState      |
+        |                |   |                |   |                |
+        | Private State  |   | Private State  |   | Private State  |
+        +----------------+   +----------------+   +----------------+
+```
+
+#### 最终职责表
+
+| 对象                    | 代表        | 生命周期   | 共享        |
+| --------------------- | --------- | ------ | --------- |
+| ExecutionRuntime      | 一次运行调度    | 请求级    | 否         |
+| RuntimeContext        | Runtime环境 | 请求级    | 所有Agent共享 |
+| TraceContext          | 调用链追踪     | 请求级    | 共享        |
+| SharedContext         | 协作数据      | 请求级    | 共享        |
+| AgentRuntime          | Agent调用入口 | 调用级    | 共享服务      |
+| AgentExecutionContext | Agent一次执行 | Agent级 | 隔离        |
+| AgentContext          | Agent私有状态 | Agent级 | 隔离        |
+| LoopState             | Agent循环状态 | Agent级 | 隔离        |
+
+
+### 

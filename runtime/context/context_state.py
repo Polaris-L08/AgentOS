@@ -8,4 +8,4 @@ class ContextState(BaseModel):
     agent_context: AgentContext = Field(default_factory=AgentContext)
 
     # 业务领域
-    domain_context: BaseModel | None
+    # domain_context: BaseModel | None = Field(default_factory=BaseModel)

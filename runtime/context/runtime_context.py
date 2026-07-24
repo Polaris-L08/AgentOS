@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass
 
 from runtime.context.context_state import ContextState
@@ -20,21 +21,38 @@ class RuntimeContext:
     - loop control state
     """
 
-    runtime_id: str
-
     state: ContextState
 
     trace: TraceContext
 
     loop: LoopState
 
+    runtime_id: str = str(uuid.uuid4())
+
     def fork(self) -> "RuntimeContext":
         """
-        Create a shallow copy for isolated execution scopes.
+        Create child Agent execution context.
+
+        Isolation rules:
+
+        Shared:
+            TraceContext
+
+        Copy:
+            ContextState
+            LoopState
+
+        Reason:
+
+            Multiple Agents share
+            execution trace,
+
+            but they have independent
+            reasoning state and loop state.
         """
         return RuntimeContext(
             runtime_id=self.runtime_id,
-            state=self.state,
+            state=deepcopy(self.state),
             trace=self.trace,
-            loop=self.loop
+            loop=self.loop.copy()
         )
