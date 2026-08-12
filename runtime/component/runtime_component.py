@@ -48,30 +48,18 @@ class RuntimeComponent(ABC):
         Execute a runtime operation with middleware lifecycle.
 
         Flow:
-
             before()
-
               ↓
-
             func()
-
               ↓
-
             after()
 
-
         Error:
-
             func()
-
               ↓
-
             on_error()
-
               ↓
-
             raise
-
 
         RuntimeComponent does not transform
         business exceptions.

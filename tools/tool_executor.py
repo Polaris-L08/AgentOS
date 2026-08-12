@@ -31,7 +31,7 @@ class ToolExecutor(RuntimeComponent):
                     "tool": request.tool_name
                 }
             ),
-            context,
+            context.runtime_context,
             self._execute,
             request,
             context

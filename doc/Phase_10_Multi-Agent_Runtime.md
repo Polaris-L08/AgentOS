@@ -1174,3 +1174,96 @@ ExecutionCheckpoint
 
 **AgentResult**： 一次Agent invocation的结果。
 
+## 当前项目中示例ResearchAgent的能力进化路线如下：
+
+```text
+Step 5
+Task
+ ↓
+ResearchAgent
+ ↓
+Report
+```
+
+↓
+
+```text
+Step 6
+Task
+ ↓
+ResearchAgent
+ ↓
+Tool
+ ↓
+Report
+```
+
+↓
+
+```text
+Step 7
+Task
+ ↓
+ResearchAgent
+ ↓
+Agent Logic
+ ↓
+Tool Selection
+ ↓
+Tool
+ ↓
+Report
+```
+
+↓ 下一步
+
+```text
+Step 8
+
+Task
+ ↓
+ResearchAgent
+ ↓
+LLM
+ ↓
+Decision
+ ↓
+ToolRequest
+ ↓
+ToolExecutor
+ ↓
+Tool
+ ↓
+Observation
+ ↓
+LLM
+ ↓
+ResearchReport
+```
+
+## Step 8: Research Agent + LLM Provider + Tool Decision
+
+> 这一步不是上LLM直接“完成研究”，而是让LLM参与**Agent Decision**。
+
+```text
+TaskRequest
+    ↓
+ResearchAgent
+    ↓
+LLM
+    ↓
+Decision
+    ↓
+ToolRequest
+    ↓
+ToolExecutor
+    ↓
+MarketResearchTool
+    ↓
+ToolResult
+    ↓
+ResearchAgent
+```
+
+需要注意的是： **LLM不应该直接返回ToolRequest**，因为LLM是不可信来源。
+

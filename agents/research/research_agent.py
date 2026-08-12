@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import Any
+
 from agents import BaseAgent, AgentResult
 from agents.identity import AgentIdentity
 from agents.research.domain.report import ResearchReport
 from agents.research.domain.task import ResearchTask
 from models.task_request import TaskRequest
+from providers.llm_provider import LLMProvider
+from providers.llm_response import LLMResponse
+from providers.prompt_message import PromptMessage
 from runtime.context import AgentExecutionContext
 from tools.request import ToolRequest
 from tools.tool_executor import ToolExecutor
@@ -34,9 +39,14 @@ class ResearchAgent(BaseAgent):
     Those responsibilities belong to AgentOS Runtime.
     """
 
-    def __init__(self, identity: AgentIdentity, tool_executor: ToolExecutor) -> None:
+    def __init__(self,
+                 identity: AgentIdentity,
+                 tool_executor: ToolExecutor,
+                 llm_provider: LLMProvider
+                 ) -> None:
         super().__init__(identity)
         self._tool_executor = tool_executor
+        self._llm_provider = llm_provider
 
     async def run(
             self,
@@ -97,8 +107,10 @@ class ResearchAgent(BaseAgent):
         ResearchAgent decides WHAT it needs.
         ToolExecutor decides HOW the Tool is executed.
         """
+        tool_name = await self._select_tool(task)
+
         request = ToolRequest(
-            tool_name="market_research",
+            tool_name=tool_name,
             arguments={
                 "subject": task.subject,
                 "objective": task.objective,
@@ -110,7 +122,7 @@ class ResearchAgent(BaseAgent):
         )
 
     @staticmethod
-    def _build_report(task: ResearchTask, tool_output) -> ResearchReport:
+    def _build_report(task: ResearchTask, tool_output: Any) -> ResearchReport:
         return ResearchReport(
             task_id=task.task_id,
             subject=task.subject,
@@ -154,3 +166,64 @@ class ResearchAgent(BaseAgent):
         if not user_input.strip():
             raise ValueError("Research request cannot be empty.")
         return "NVIDIA"
+
+    async def _select_tool(
+            self,
+            task: ResearchTask,
+    ) -> str:
+        """
+        Ask the LLM to determine which research Tool
+        should be used for the current task.
+
+        The LLM only provides a decision.
+
+        ResearchAgent remains responsible for validating
+        the decision and creating ToolRequest.
+        """
+
+        messages = [
+            PromptMessage(
+                role="system",
+                content=(
+                    "You are an investment research agent. "
+                    "Select the appropriate research tool "
+                    "for the given task. "
+                    "Currently available tools: "
+                    "market_research. "
+                    "Return only the tool name."
+                ),
+            ),
+            PromptMessage(
+                role="user",
+                content=(
+                    f"Research subject: {task.subject}\n"
+                    f"Research objective: {task.objective}"
+                ),
+            ),
+        ]
+
+        response = await self._llm_provider.generate(
+            messages
+        )
+
+        return self._validate_tool_selection(
+            response
+        )
+
+    def _validate_tool_selection(self, response: LLMResponse) -> str:
+        """
+        Validate an LLM-generated Tool decision.
+
+        The LLM is not trusted to directly control ToolExecutor.
+        """
+
+        tool_name = response.content.strip()
+
+        allowed_tools = {
+            "market_research",
+        }
+
+        if tool_name not in allowed_tools:
+            raise ValueError(f"LLM selected unsupported tool: {tool_name}")
+
+        return tool_name

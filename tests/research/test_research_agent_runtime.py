@@ -10,6 +10,9 @@ from agents.research.domain.report import ResearchReport
 from agents.research.domain.task import ResearchTask
 from agents.research.research_agent import ResearchAgent
 from models.task_request import TaskRequest
+from providers.llm_provider import LLMProvider
+from providers.llm_response import LLMResponse
+from providers.prompt_message import PromptMessage
 from runtime.context.context_state import ContextState
 from runtime.events.event_bus import EventBus
 from runtime.execution.agent_runtime import AgentRuntime
@@ -59,6 +62,24 @@ class MarketResearchTool(AbstractTool):
             },
         )
 
+class MockLLMProvider(LLMProvider):
+    """
+    Deterministic LLM provider for ResearchAgent integration tests.
+    """
+    async def generate(self, messages: list[PromptMessage]) -> LLMResponse:
+        return LLMResponse(
+            content="market_research",
+            metadata={
+                "model": "test-model",
+            },
+        )
+
+class InvalidLLMProvider(LLMProvider):
+    async def generate(self, messages: list[PromptMessage]) -> LLMResponse:
+        return LLMResponse(
+            content="dangerous_tool",
+        )
+
 @pytest.mark.asyncio
 async def test_research_agent_runtime_execution():
     # -------------------------------------------------
@@ -83,6 +104,7 @@ async def test_research_agent_runtime_execution():
             name="ResearchAgent",
         ),
         tool_executor=tool_executor,
+        llm_provider=MockLLMProvider(),
     )
 
     # -------------------------------------------------
@@ -158,3 +180,134 @@ async def test_research_agent_runtime_execution():
     assert tool_result.output["subject"] == "NVIDIA"
 
     assert result.output.subject == "NVIDIA"
+
+@pytest.mark.asyncio
+async def test_research_agent_selects_market_research_tool():
+    # -------------------------------------------------
+    # Tool
+    # -------------------------------------------------
+    registry = ToolRegistry()
+
+    registry.register(MarketResearchTool())
+
+    event_bus = EventBus()
+
+    tool_executor = ToolExecutor(registry, event_bus)
+
+    # -------------------------------------------------
+    # Agent
+    # -------------------------------------------------
+
+    agent = ResearchAgent(
+        identity=AgentIdentity(
+            agent_id="research-agent-001",
+            agent_type="investment_research",
+            name="ResearchAgent",
+        ),
+        tool_executor=tool_executor,
+        llm_provider=MockLLMProvider()
+    )
+
+    # -------------------------------------------------
+    # Runtime
+    # -------------------------------------------------
+
+    execution_runtime = ExecutionRuntime(
+        trace_recorder=TraceRecorder()
+    )
+
+    runtime_context = execution_runtime.create_context()
+
+    agent_runtime = AgentRuntime()
+
+    # -------------------------------------------------
+    # Runtime task
+    # -------------------------------------------------
+
+    task_request = TaskRequest(
+        task_id="research-request-002",
+        user_input="Analyze NVIDIA stock valuation.",
+    )
+
+    # -------------------------------------------------
+    # Execute
+    # -------------------------------------------------
+
+    result = await agent_runtime.execute(
+        agent=agent,
+        task=task_request,
+        runtime_context=runtime_context,
+    )
+
+    # -------------------------------------------------
+    # Assertions
+    # -------------------------------------------------
+    assert result.success is True
+
+    assert result.output.subject == "NVIDIA"
+
+    assert len(result.observations) == 1
+
+    tool_result = result.observations[0]
+
+    assert tool_result.success is True
+
+@pytest.mark.asyncio
+async def test_research_agent_rejects_unsupported_llm_tool():
+    # -------------------------------------------------
+    # Tool
+    # -------------------------------------------------
+    registry = ToolRegistry()
+
+    registry.register(MarketResearchTool())
+
+    event_bus = EventBus()
+
+    tool_executor = ToolExecutor(registry, event_bus)
+
+    # -------------------------------------------------
+    # Agent
+    # -------------------------------------------------
+
+    agent = ResearchAgent(
+        identity=AgentIdentity(
+            agent_id="research-agent-001",
+            agent_type="investment_research",
+            name="ResearchAgent",
+        ),
+        tool_executor=tool_executor,
+        llm_provider=InvalidLLMProvider()
+    )
+
+    # -------------------------------------------------
+    # Runtime
+    # -------------------------------------------------
+
+    execution_runtime = ExecutionRuntime(
+        trace_recorder=TraceRecorder()
+    )
+
+    runtime_context = execution_runtime.create_context()
+
+    agent_runtime = AgentRuntime()
+
+    # -------------------------------------------------
+    # Execute
+    # -------------------------------------------------
+    with pytest.raises(ValueError, match="unsupported tool"):
+        await agent_runtime.execute(
+            agent=agent,
+            task=TaskRequest(
+                task_id="research-invalid-001",
+                user_input="Analyze NVIDIA.",
+            ),
+            runtime_context=runtime_context,
+        )
+    # result = await agent_runtime.execute(
+    #     agent=agent,
+    #     task=TaskRequest(
+    #         task_id="research-invalid-001",
+    #         user_input="Analyze NVIDIA",
+    #     ),
+    #     runtime_context=runtime_context,
+    # )
