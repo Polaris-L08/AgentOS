@@ -13,7 +13,7 @@ from runtime.tracing.trace_recorder import TraceRecorder
 from tests.mocks.mock_critic_agent import MockCriticAgent
 from tests.mocks.mock_planner import MockPlanner
 from tests.mocks.mock_tool import MockTool
-from tools.executor import ToolExecutor
+from tools.tool_executor import ToolExecutor
 from tools.registry import ToolRegistry
 
 @pytest.mark.asyncio

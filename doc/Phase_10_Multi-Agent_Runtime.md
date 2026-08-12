@@ -1161,3 +1161,16 @@ ExecutionCheckpoint
                            ReportAgent
 ```
 
+## Step 4: AgentResult 与 Agent-to-Agent Communication
+
+上一节完成了 Multi-Agent Runtime的两个基础：
+
+ - Execution Boundary。 确定 RuntimeContext表示一次任务执行共享上下文； AgentExecutionContext 表示单个Agent的私有执行上下文。
+ - Durable Boundary。确定 Agent状态可以保存；多个Agent状态可以独立恢复。
+
+### AgentResult 设计 （重复设计了）
+
+**TaskResult**: 整个Workflow或Runtime最终结果。
+
+**AgentResult**： 一次Agent invocation的结果。
+

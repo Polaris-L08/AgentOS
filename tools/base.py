@@ -46,6 +46,6 @@ class AbstractTool(ABC):
     async def execute(
             self,
             input: Any,
-            context: ContextState
+            context_state: ContextState
     ) -> ToolResult:
         ...

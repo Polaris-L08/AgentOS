@@ -1,4 +1,5 @@
 from runtime.component.runtime_component import RuntimeComponent
+from runtime.context import AgentExecutionContext
 from runtime.context.runtime_context import RuntimeContext
 from runtime.middleware.middleware_chain import MiddlewareChain
 from tools import tool_event
@@ -20,7 +21,7 @@ class ToolExecutor(RuntimeComponent):
     async def execute(
             self,
             request: ToolRequest,
-            context: RuntimeContext
+            context: AgentExecutionContext
     ) -> ToolResult:
         return await self.invoke(
             RuntimeOperation(
@@ -36,12 +37,12 @@ class ToolExecutor(RuntimeComponent):
             context
         )
 
-    async def _execute(self, request: ToolRequest, runtime_context: RuntimeContext):
-        context = runtime_context.state
+    async def _execute(self, request: ToolRequest, agent_context: AgentExecutionContext):
+        context_state = agent_context.state
 
         try:
             tool = self.registry.get(request.tool_name)
-            result = await tool.execute(input=request.arguments, context=context)
+            result = await tool.execute(input=request.arguments, context_state=context_state)
 
         except ToolExecutionError as e:
             result = ToolResult(
@@ -52,7 +53,7 @@ class ToolExecutor(RuntimeComponent):
         except Exception as e:
             raise
 
-        self._publish_tool_event(request, result, runtime_context)
+        self._publish_tool_event(request, result, agent_context.runtime_context)
 
         return result
 

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from agents.identity import AgentIdentity
 from runtime.component import RuntimeComponent
 from runtime.context import AgentExecutionContext
-from .result import AgentResult
+from .agent_result import AgentResult
 
 
 class BaseAgent(RuntimeComponent, ABC):
@@ -38,7 +38,7 @@ class BaseAgent(RuntimeComponent, ABC):
             self,
             task,
             agent_execution_context: AgentExecutionContext
-    ):
+    ) -> AgentResult:
         """
         Agent execution entry.
 

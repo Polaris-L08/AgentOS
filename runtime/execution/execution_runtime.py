@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from runtime.context.runtime_context import RuntimeContext
+from runtime.loop.loop_state import LoopState
 from runtime.tracing.trace import Trace
 from runtime.tracing.trace_context import TraceContext
 from runtime.tracing.trace_recorder import TraceRecorder

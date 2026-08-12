@@ -1,5 +1,5 @@
 from agents.base_agent import BaseAgent
-from .result import AgentResult
+from .agent_result import AgentResult
 
 
 __all__ = [

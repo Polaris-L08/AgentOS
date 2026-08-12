@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from agents.agent_result import AgentResult
+from agents.identity import AgentIdentity
+from agents.research.domain.report import ResearchReport
+from agents.research.domain.task import ResearchTask
+from agents.research.research_agent import ResearchAgent
+from models.task_request import TaskRequest
+from runtime.context.context_state import ContextState
+from runtime.events.event_bus import EventBus
+from runtime.execution.agent_runtime import AgentRuntime
+from runtime.execution.execution_runtime import ExecutionRuntime
+from runtime.tracing.trace_recorder import TraceRecorder
+from tools.base import AbstractTool
+from tools.registry import ToolRegistry
+from tools.result import ToolResult
+from tools.tool_executor import ToolExecutor
+
+
+class MarketResearchTool(AbstractTool):
+    """
+    Test implementation of a domain research tool.
+
+    This is not a MockTool.
+    It represents a concrete Tool contract used by
+    ResearchAgent.
+    """
+    @property
+    def name(self) -> str:
+        return "market_research"
+
+    @property
+    def description(self) -> str:
+        return "Retrieve market research data for a subject."
+
+    async def execute(
+            self,
+            input: Any,
+            context_state: ContextState
+    ) -> ToolResult:
+        subject = input["subject"]
+        objective = input["objective"]
+
+        return ToolResult(
+            success=True,
+            output={
+                "subject": subject,
+                "objective": objective,
+                "market_data": (
+                    f"Research data collected for {subject}."
+                ),
+            },
+            metadata={
+                "source": "test_market_data_provider",
+            },
+        )
+
+@pytest.mark.asyncio
+async def test_research_agent_runtime_execution():
+    # -------------------------------------------------
+    # Tool
+    # -------------------------------------------------
+    registry = ToolRegistry()
+
+    registry.register(MarketResearchTool())
+
+    event_bus = EventBus()
+
+    tool_executor = ToolExecutor(registry, event_bus)
+
+    # -------------------------------------------------
+    # Agent
+    # -------------------------------------------------
+
+    agent = ResearchAgent(
+        identity=AgentIdentity(
+            agent_id="research-agent-001",
+            agent_type="investment_research",
+            name="ResearchAgent",
+        ),
+        tool_executor=tool_executor,
+    )
+
+    # -------------------------------------------------
+    # Runtime
+    # -------------------------------------------------
+
+    execution_runtime = ExecutionRuntime(
+        trace_recorder=TraceRecorder()
+    )
+
+    runtime_context = execution_runtime.create_context()
+
+    agent_runtime = AgentRuntime()
+
+    # -------------------------------------------------
+    # Runtime task
+    # -------------------------------------------------
+
+    task_request = TaskRequest(
+        task_id="research-request-001",
+        user_input="Analyze NVIDIA investment outlook.",
+    )
+
+    # -------------------------------------------------
+    # Execute
+    # -------------------------------------------------
+
+    result = await agent_runtime.execute(
+        agent=agent,
+        task=task_request,
+        runtime_context=runtime_context,
+    )
+
+    # -------------------------------------------------
+    # Assertions
+    # -------------------------------------------------
+
+    assert isinstance(result, AgentResult)
+
+    assert result.success is True
+
+    assert isinstance(
+        result.output,
+        ResearchReport,
+    )
+
+    report = result.output
+
+    assert report.task_id == "research-request-001"
+
+    assert report.subject == "NVIDIA"
+
+    assert report.findings == (
+        "The research subject is NVIDIA.",
+        "The research objective is: Evaluate the investment outlook.",
+    )
+
+    assert isinstance(result, AgentResult)
+
+    assert result.success is True
+
+    assert isinstance(
+        result.output,
+        ResearchReport,
+    )
+
+    assert len(result.observations) == 1
+
+    tool_result = result.observations[0]
+
+    assert tool_result.success is True
+
+    assert tool_result.output["subject"] == "NVIDIA"
+
+    assert result.output.subject == "NVIDIA"

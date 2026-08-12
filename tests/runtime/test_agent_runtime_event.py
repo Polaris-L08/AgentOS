@@ -4,7 +4,7 @@ import pytest
 
 from agents.base_agent import BaseAgent
 from agents.identity import AgentIdentity
-from agents.result import AgentResult
+from agents.agent_result import AgentResult
 from models.task_request import TaskRequest
 from runtime.context.runtime_context import RuntimeContext
 from runtime.execution.agent_runtime import AgentRuntime

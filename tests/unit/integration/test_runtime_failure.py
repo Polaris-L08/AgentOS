@@ -14,7 +14,7 @@ from tests.mocks.mock_critic_agent import MockCriticAgent
 from tests.mocks.mock_failed_tool import MockFailedTool
 from tests.mocks.mock_planer_failed import MockPlannerException
 from tests.mocks.mock_planner import MockPlanner
-from tools.executor import ToolExecutor
+from tools.tool_executor import ToolExecutor
 from tools.registry import ToolRegistry
 
 
