@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from actions.observation import Observation
 from agents import BaseAgent, AgentResult
 from agents.identity import AgentIdentity
 from agents.research.research_agent import ResearchAgent
@@ -49,55 +50,77 @@ class SupervisorAgent(BaseAgent):
 
     async def run(
             self,
-            task,
-            agent_execution_context: AgentExecutionContext
+            task: TaskRequest,
+            agent_execution_context: AgentExecutionContext,
     ) -> AgentResult:
         """
         Execute one Supervisor task.
 
-        The Supervisor decides which downstream Agent
-        should execute the task.
+        The Supervisor repeatedly decides whether another
+        Agent should be invoked or whether the overall task
+        can be completed.
+
+        The Supervisor owns the orchestration decision.
+
+        AgentRuntime owns the actual Agent invocation.
         """
-        runtime_context = agent_execution_context.runtime_context
 
-        decision = await self._decide_next_action(task, agent_execution_context)
+        max_steps = 5
 
-        if decision == "market_research":
-            result = await self._agent_runtime.execute(
-                agent=self._research_agent,
-                task=task,
-                runtime_context=runtime_context
+        while agent_execution_context.loop.step_count < max_steps:
+
+            agent_execution_context.loop.step_count += 1
+
+            decision = await self._decide_next_action(
+                task,
+                agent_execution_context,
             )
 
-            if not result.success:
-                return AgentResult(
-                    success=False,
-                    output=None,
-                    observations=result.observations,
-                    metadata={
-                        "agent_id": self.identity.agent_id,
-                        "agent_type": self.identity.agent_type,
-                        "delegated_agent": (
-                            self._research_agent.identity.agent_id
-                        ),
-                    },
+            if decision == "final":
+                return self._build_final_result(
+                    task,
+                    agent_execution_context,
                 )
-            return result
 
-        if decision == "final":
-            return AgentResult(
-                success=True,
-                output=(
-                    "Supervisor determined that no downstream "
-                    "Agent execution is required."
-                ),
-                metadata={
-                    "agent_id": self.identity.agent_id,
-                    "agent_type": self.identity.agent_type,
-                },
+            if decision == "research":
+                result = await self._agent_runtime.execute(
+                    agent=self._research_agent,
+                    task=task,
+                    runtime_context=agent_execution_context.runtime_context,
+                )
+
+                observation = self._create_agent_observation(
+                    result
+                )
+
+                agent_execution_context.loop.observation_history.append(
+                    observation
+                )
+
+                if not result.success:
+                    return AgentResult(
+                        success=False,
+                        output=None,
+                        observations=[
+                            observation
+                        ],
+                        metadata={
+                            "agent_id": self.identity.agent_id,
+                            "agent_type": self.identity.agent_type,
+                            "delegated_agent": (
+                                self._research_agent.identity.agent_id
+                            ),
+                        },
+                    )
+
+                continue
+
+            raise RuntimeError(
+                f"Unsupported Supervisor decision: {decision}"
             )
+
         raise RuntimeError(
-            f"Unsupported Supervisor decision: {decision}"
+            "SupervisorAgent exceeded maximum execution steps."
         )
 
     async def _decide_next_action(
@@ -117,21 +140,26 @@ class SupervisorAgent(BaseAgent):
                 content=(
                     "You are a Supervisor Agent.\n"
                     "\n"
-                    "Your responsibility is to decide whether "
-                    "the current user task requires a ResearchAgent.\n"
+                    "Your responsibility is to coordinate "
+                    "downstream Agents to complete the user task.\n"
                     "\n"
                     "Available decisions:\n"
                     "\n"
                     "research\n"
-                    "Use ResearchAgent to perform investment research.\n"
+                    "Invoke ResearchAgent to perform investment research.\n"
                     "\n"
                     "final\n"
-                    "The task does not require ResearchAgent.\n"
+                    "The available research information is sufficient "
+                    "to complete the current task.\n"
+                    "\n"
+                    "Important:\n"
+                    "You may choose research multiple times if additional "
+                    "research is necessary.\n"
                     "\n"
                     "Return exactly one of:\n"
                     "research\n"
                     "final"
-                ),
+                )
             ),
             PromptMessage(
                 role="user",
@@ -156,7 +184,7 @@ class SupervisorAgent(BaseAgent):
         decision = content.strip()
 
         allowed_decisions = {
-            "market_research",
+            "research",
             "final",
         }
 
@@ -194,3 +222,81 @@ class SupervisorAgent(BaseAgent):
             )
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _create_agent_observation(result: AgentResult) -> Observation:
+        """
+        Convert an AgentResult into a Supervisor-level Observation.
+
+        AgentResult belongs to Agent-to-Agent communication.
+
+        Observation belongs to the current Agent's
+        private execution loop.
+
+        Therefore the Supervisor must not directly store
+        AgentResult inside LoopState.
+        """
+        output = result.output
+
+        if output is None:
+            content = ""
+
+        elif isinstance(output, str):
+            content = output
+
+        else:
+            content = str(output)
+
+        return Observation(
+            success=result.success,
+            content=content,
+            metadata={
+                key: str(value)
+                for key, value in result.metadata.items()
+            }
+        )
+
+    @staticmethod
+    def _build_final_result(
+            task: TaskRequest,
+            agent_execution_context: AgentExecutionContext,
+    ) -> AgentResult:
+        """
+        Build the final result of the Supervisor execution.
+
+        The Supervisor returns the accumulated downstream
+        Agent observations as part of its AgentResult.
+        """
+
+        observations = (
+            agent_execution_context.loop.observation_history
+        )
+
+        successful_observations = [
+            observation
+            for observation in observations
+            if observation.success
+        ]
+
+        if successful_observations:
+            output = "\n\n".join(
+                observation.content
+                for observation in successful_observations
+            )
+        else:
+            output = (
+                "Supervisor completed without "
+                "successful downstream Agent execution."
+            )
+
+        return AgentResult(
+            success=True,
+            output=output,
+            observations=list(observations),
+            metadata={
+                "task_id": task.task_id,
+                "execution_steps": str(
+                    agent_execution_context.loop.step_count
+                ),
+            },
+        )

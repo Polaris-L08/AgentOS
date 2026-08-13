@@ -83,6 +83,30 @@ class SequentialMockLLMProvider(LLMProvider):
             content="final",
         )
 
+class MockLLMProvider(LLMProvider):
+
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = list(responses)
+        self._index = 0
+
+    async def generate(
+        self,
+        messages: list[PromptMessage],
+    ) -> LLMResponse:
+
+        if self._index >= len(self._responses):
+            raise RuntimeError(
+                "MockLLMProvider has no more responses."
+            )
+
+        content = self._responses[self._index]
+
+        self._index += 1
+
+        return LLMResponse(
+            content=content
+        )
+
 @pytest.mark.asyncio
 async def test_supervisor_agent():
     task = TaskRequest(
@@ -109,7 +133,12 @@ async def test_supervisor_agent():
             name="ResearchAgent",
         ),
         tool_executor=tool_executor,
-        llm_provider=SequentialMockLLMProvider(),
+        llm_provider=MockLLMProvider(
+            responses=[
+                "market_research",
+                "final",
+            ]
+        ),
     )
 
     supervisor_agent = SupervisorAgent(
@@ -120,7 +149,12 @@ async def test_supervisor_agent():
         ),
         agent_runtime=agent_runtime,
         research_agent=research_agent,
-        llm_provider=SequentialMockLLMProvider()
+        llm_provider=MockLLMProvider(
+            responses=[
+                "research",
+                "research",
+                "final",
+            ])
     )
 
     # run
