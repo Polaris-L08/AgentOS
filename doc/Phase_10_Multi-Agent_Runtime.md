@@ -1340,3 +1340,6 @@ ResearchReport
     ▼
 AgentResult
 ```
+
+## Step 10: ResearchAgent 多轮 Agent Loop
+

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from actions.observation import Observation
 from agents import BaseAgent, AgentResult
 from agents.identity import AgentIdentity
@@ -71,52 +69,48 @@ class ResearchAgent(BaseAgent):
         """
         research_task = self._create_research_task(task)
 
-        tool_result = await self._execute_research_tool(
-            research_task,
-            agent_execution_context,
-        )
+        max_steps = 5
 
-        if not tool_result.success:
-            observation = self._create_observation(
-                tool_result=tool_result,
-            )
-            return AgentResult(
-                success=False,
-                output=None,
-                observations=[observation],
-                metadata={
-                    "agent_id": self.identity.agent_id,
-                    "agent_type": self.identity.agent_type,
-                },
+        while(agent_execution_context.loop.step_count < max_steps):
+            agent_execution_context.loop.step_count += 1
+
+            decision = await self._select_tool(research_task, agent_execution_context)
+
+            if decision == "final":
+                return self._build_final_result(research_task, agent_execution_context)
+
+
+            tool_result = await self._execute_research_tool(
+                research_task,
+                decision,
+                agent_execution_context,
             )
 
-        report = self._build_report(
-            research_task,
-            tool_result.output,
-        )
+            observation = self._create_observation(tool_result)
 
-        observation = self._create_observation(
-            tool_result=tool_result,
-        )
+            agent_execution_context.loop.observation_history.append(observation)
 
-        return AgentResult(
-            success=True,
-            output=report,
-            observations=[observation],
-            metadata={
-                "agent_id": self.identity.agent_id,
-                "agent_type": self.identity.agent_type,
-            },
-        )
 
-    async def _execute_research_tool(self, task: ResearchTask, agent_execution_context: AgentExecutionContext):
+            if not tool_result.success:
+                return AgentResult(
+                    success=False,
+                    output=None,
+                    observations=[observation],
+                    metadata={
+                        "agent_id": self.identity.agent_id,
+                        "agent_type": self.identity.agent_type,
+                    },
+                )
+
+        raise RuntimeError("ResearchAgent exceeded maximum execution steps.")
+
+    async def _execute_research_tool(self, task: ResearchTask, tool_name: str, agent_execution_context: AgentExecutionContext):
         """
         Execute the tool required for the current research task.
 
         ResearchAgent decides WHAT it needs.
         ToolExecutor decides HOW the Tool is executed.
         """
-        tool_name = await self._select_tool(task)
 
         request = ToolRequest(
             tool_name=tool_name,
@@ -128,20 +122,6 @@ class ResearchAgent(BaseAgent):
         return await self._tool_executor.execute(
             request=request,
             context=agent_execution_context,
-        )
-
-    @staticmethod
-    def _build_report(task: ResearchTask, tool_output: Any) -> ResearchReport:
-        return ResearchReport(
-            task_id=task.task_id,
-            subject=task.subject,
-            summary=str(tool_output),
-            findings=(
-                f"The research subject is {task.subject}.",
-                f"The research objective is: {task.objective}.",
-            ),
-            risks=(),
-            evidence=(),
         )
 
     @staticmethod
@@ -179,6 +159,7 @@ class ResearchAgent(BaseAgent):
     async def _select_tool(
             self,
             task: ResearchTask,
+            agent_execution_context: AgentExecutionContext,
     ) -> str:
         """
         Ask the LLM to determine which research Tool
@@ -194,19 +175,28 @@ class ResearchAgent(BaseAgent):
             PromptMessage(
                 role="system",
                 content=(
-                    "You are an investment research agent. "
-                    "Select the appropriate research tool "
-                    "for the given task. "
-                    "Currently available tools: "
-                    "market_research. "
-                    "Return only the tool name."
+                    "You are an investment research agent.\n"
+                    "\n"
+                    "You have two possible decisions:\n"
+                    "\n"
+                    "1. market_research\n"
+                    "   Use the market research tool to obtain "
+                    "additional information.\n"
+                    "\n"
+                    "2. final\n"
+                    "   The available information is sufficient "
+                    "to complete the research task.\n"
+                    "\n"
+                    "Return exactly one of:\n"
+                    "market_research\n"
+                    "final"
                 ),
             ),
             PromptMessage(
                 role="user",
-                content=(
-                    f"Research subject: {task.subject}\n"
-                    f"Research objective: {task.objective}"
+                content=self._build_decision_prompt(
+                    task,
+                    agent_execution_context,
                 ),
             ),
         ]
@@ -215,27 +205,32 @@ class ResearchAgent(BaseAgent):
             messages
         )
 
-        return self._validate_tool_selection(
+        return self._validate_decision(
             response
         )
 
-    def _validate_tool_selection(self, response: LLMResponse) -> str:
+    @staticmethod
+    def _validate_decision(response: LLMResponse) -> str:
         """
         Validate an LLM-generated Tool decision.
 
         The LLM is not trusted to directly control ToolExecutor.
         """
 
-        tool_name = response.content.strip()
+        decision = response.content.strip()
 
-        allowed_tools = {
+        allowed_decisions = {
             "market_research",
+            "final",
         }
 
-        if tool_name not in allowed_tools:
-            raise ValueError(f"LLM selected unsupported tool: {tool_name}")
+        if decision not in allowed_decisions:
+            raise ValueError(
+                f"LLM selected unsupported decision: "
+                f"{decision}"
+            )
 
-        return tool_name
+        return decision
 
     @staticmethod
     def _create_observation(tool_result) -> Observation:
@@ -263,3 +258,83 @@ class ResearchAgent(BaseAgent):
                 for key, value in tool_result.metadata.items()
             },
         )
+
+    @staticmethod
+    def _build_decision_prompt(task: ResearchTask, agent_execution_context: AgentExecutionContext) -> str:
+        """
+        Build the decision prompt for the current Agent loop iteration.
+
+        The prompt contains:
+            - original research task
+            - observations collected so far
+        """
+
+        lines = [
+            f"Research subject: {task.subject}",
+            f"Research objective: {task.objective}",
+            "",
+            "Previous observations:",
+        ]
+
+        observations = agent_execution_context.loop.observation_history
+
+        if not  observations:
+            lines.append("None")
+        else:
+            for index, observation in enumerate(observations, start=1):
+                lines.append(
+                    f"{index}."
+                    f"success={observation.success};"
+                    f"content={observation.content}"
+                )
+
+        return "\n".join(lines)
+
+    def _build_final_result(self, research_task, agent_execution_context):
+        """
+        Build the final AgentResult from the accumulated
+        Agent observations.
+        """
+        observations = agent_execution_context.loop.observation_history
+
+        report = ResearchReport(
+            task_id=research_task.task_id,
+            subject=research_task.subject,
+            summary=self._build_summary(observations),
+            findings=tuple(
+                observation.content
+                for observation in observations
+                if observation.success
+            ),
+            risks=(),
+            evidence=(),
+        )
+
+        return AgentResult(
+            success=True,
+            output=report,
+            observations=list(observations),
+            metadata={
+                "agent_id": self.identity.agent_id,
+                "agent_type": self.identity.agent_type,
+                "step_count": str(agent_execution_context.loop.step_count),
+            }
+        )
+
+    @staticmethod
+    def _build_summary(observations):
+        """
+        Build a minimal summary from collected observations.
+
+        Sophisticated report synthesis will be introduced later.
+        """
+        successful_observations = [
+            observation
+            for observation in observations
+            if observation.success
+        ]
+
+        if not successful_observations:
+            return "No successful research observations."
+
+        return "Research completed successfully."

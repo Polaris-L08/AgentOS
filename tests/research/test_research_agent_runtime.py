@@ -80,6 +80,31 @@ class InvalidLLMProvider(LLMProvider):
             content="dangerous_tool",
         )
 
+class SequentialMockLLMProvider(LLMProvider):
+    """
+    LLM provider that returns a deterministic sequence
+    of Agent decisions.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate(
+        self,
+        messages: list[PromptMessage],
+    ) -> LLMResponse:
+
+        self.calls += 1
+
+        if self.calls == 1:
+            return LLMResponse(
+                content="market_research",
+            )
+
+        return LLMResponse(
+            content="final",
+        )
+
 @pytest.mark.asyncio
 async def test_research_agent_runtime_execution():
     # -------------------------------------------------
@@ -311,3 +336,57 @@ async def test_research_agent_rejects_unsupported_llm_tool():
     #     ),
     #     runtime_context=runtime_context,
     # )
+
+@pytest.mark.asyncio
+async def test_research_agent_multi_round_execution():
+    registry = ToolRegistry()
+
+    registry.register(MarketResearchTool())
+
+    event_bus = EventBus()
+
+    tool_executor = ToolExecutor(registry, event_bus)
+
+    llm_provider = SequentialMockLLMProvider()
+
+    agent = ResearchAgent(
+        identity=AgentIdentity(
+            agent_id="research-agent-001",
+            agent_type="investment_research",
+            name="ResearchAgent",
+        ),
+        tool_executor=tool_executor,
+        llm_provider=llm_provider,
+    )
+
+    # -------------------------------------------------
+    # Runtime
+    # -------------------------------------------------
+
+    execution_runtime = ExecutionRuntime(
+        trace_recorder=TraceRecorder()
+    )
+
+    runtime_context = execution_runtime.create_context()
+
+    agent_runtime = AgentRuntime()
+
+    result = await agent_runtime.execute(
+        agent=agent,
+        task=TaskRequest(
+            task_id="research-multi-round-001",
+            user_input="Analyze NVIDIA market valuation.",
+        ),
+        runtime_context=runtime_context,
+    )
+
+    assert result.success is True
+
+    assert isinstance(
+        result.output,
+        ResearchReport,
+    )
+
+    assert llm_provider.calls == 2
+
+    assert len(result.observations) == 1
