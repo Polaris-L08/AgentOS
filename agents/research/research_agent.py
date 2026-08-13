@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from actions.observation import Observation
 from agents import BaseAgent, AgentResult
 from agents.identity import AgentIdentity
 from agents.research.domain.report import ResearchReport
@@ -76,13 +77,17 @@ class ResearchAgent(BaseAgent):
         )
 
         if not tool_result.success:
+            observation = self._create_observation(
+                tool_result=tool_result,
+            )
             return AgentResult(
                 success=False,
                 output=None,
+                observations=[observation],
                 metadata={
                     "agent_id": self.identity.agent_id,
                     "agent_type": self.identity.agent_type,
-                }
+                },
             )
 
         report = self._build_report(
@@ -90,10 +95,14 @@ class ResearchAgent(BaseAgent):
             tool_result.output,
         )
 
+        observation = self._create_observation(
+            tool_result=tool_result,
+        )
+
         return AgentResult(
             success=True,
             output=report,
-            observations=[tool_result],
+            observations=[observation],
             metadata={
                 "agent_id": self.identity.agent_id,
                 "agent_type": self.identity.agent_type,
@@ -227,3 +236,30 @@ class ResearchAgent(BaseAgent):
             raise ValueError(f"LLM selected unsupported tool: {tool_name}")
 
         return tool_name
+
+    @staticmethod
+    def _create_observation(tool_result) -> Observation:
+        """
+        Convert a ToolResult into an Agent-level Observation.
+
+        ToolResult belongs to Tool Runtime.
+        Observation belongs to Agent execution.
+
+        The Agent should not expose the Tool Runtime's
+        internal result model as its own observation.
+        """
+
+        return Observation(
+            success=tool_result.success,
+            content=str(tool_result.output)
+            if tool_result.output is not None
+            else (
+                str(tool_result.error)
+                if tool_result.error is not None
+                else ""
+            ),
+            metadata={
+                key: str(value)
+                for key, value in tool_result.metadata.items()
+            },
+        )

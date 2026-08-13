@@ -1267,3 +1267,76 @@ ResearchAgent
 
 需要注意的是： **LLM不应该直接返回ToolRequest**，因为LLM是不可信来源。
 
+## Step 9: 统一 Observation 边界
+
+- `ToolResult`是**Tool Runtime的结果**
+- `Observation`是**Agent执行环境看到的反馈**
+- `AgentResult`是**Agent于调用方之间的通信结果**
+
+但是当前 `ResearchAgent`中： `observations=[tool_result]`,需要区分这三个对象。
+
+最终关系如下：
+```text
+                    ToolExecutor
+                         │
+                         ▼
+                    ToolResult
+                         │
+                         │ convert
+                         ▼
+                    Observation
+                         │
+                         ▼
+                  Agent internal state
+                         │
+                         │
+                         ▼
+                    AgentResult
+                         │
+                         ├── output
+                         ├── observations
+                         └── metadata
+```
+
+Observation处理完成后，ResearchAgent一次执行的完整链路是：
+
+```text
+TaskRequest
+    │
+    ▼
+ResearchAgent
+    │
+    ├── ResearchTask
+    │
+    ├── LLMProvider
+    │      │
+    │      ▼
+    │   LLMResponse
+    │      │
+    │      ▼
+    │   Tool decision
+    │
+    ▼
+ToolRequest
+    │
+    ▼
+ToolExecutor
+    │
+    ▼
+Tool
+    │
+    ▼
+ToolResult
+    │
+    ▼
+Observation
+    │
+    ▼
+ResearchAgent
+    │
+    ▼
+ResearchReport
+    │
+    ▼
+AgentResult
+```
