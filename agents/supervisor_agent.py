@@ -101,9 +101,6 @@ class SupervisorAgent(BaseAgent):
                     return AgentResult(
                         success=False,
                         output=None,
-                        observations=[
-                            observation
-                        ],
                         metadata={
                             "agent_id": self.identity.agent_id,
                             "agent_type": self.identity.agent_type,
@@ -134,6 +131,15 @@ class SupervisorAgent(BaseAgent):
         The LLM only produces a decision.
         Supervisor validates the decision before execution.
         """
+
+        shared_context = agent_execution_context.runtime_context.shared_context
+        research_report = shared_context.get("research.report")
+
+        if research_report is None:
+            shared_information = "None"
+        else:
+            shared_information = str(research_report)
+
         messages = [
             PromptMessage(
                 role="system",
@@ -167,6 +173,8 @@ class SupervisorAgent(BaseAgent):
                     f"User task:\n{task.user_input}\n\n"
                     f"Previous Supervisor observations:\n"
                     f"{self._format_observations(agent_execution_context)}"
+                    f"Shared research information:\n"
+                    f"{shared_information}\n\n"
                 ),
             ),
         ]
@@ -292,7 +300,6 @@ class SupervisorAgent(BaseAgent):
         return AgentResult(
             success=True,
             output=output,
-            observations=list(observations),
             metadata={
                 "task_id": task.task_id,
                 "execution_steps": str(

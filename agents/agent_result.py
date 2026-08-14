@@ -31,6 +31,4 @@ class AgentResult:
 
     output: Any | None = None
 
-    observations: list[Any] = field(default_factory=list)
-
     metadata: dict[str, Any] = field(default_factory=dict)

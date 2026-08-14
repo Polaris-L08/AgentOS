@@ -1345,3 +1345,102 @@ AgentResult
 
 ## Step 11: Supervisor Agent实现
 
+## Step 12: Supervisor Multi-Agent Loop
+
+## Step 13: SharedContext 跨 Agent 协作
+
+当前Agent的结果只能通过AgentResult返回给Supervisor，但是Multi-Agent系统需要支持：
+
+```text
+ResearchAgent
+       │
+       │ 写入共享研究信息
+       ▼
+RuntimeContext.shared_context
+       │
+       ▼
+Supervisor
+       │
+       │ 再调用其他 Agent
+       ▼
+RiskAgent / StockAgent / ReportAgent
+```
+
+另外，SupervisorAgent不应该使用Observation充当共享数据。
+
+**Observation**
+> Agent 内部推理过程的数据。
+
+**AgentResult**
+> Agent 执行完成后，对调用方公开的结果。
+
+**SharedContext**
+> 同一次 Execution 中多个 Agent 共享的业务状态。
+
+结构为：
+
+```text
+┌───────────────────────────────────────────┐
+│ AgentExecutionContext                     │
+│                                           │
+│  state                                    │
+│  loop                                     │
+│    └── observation_history                │
+│                                           │
+│  Agent private                            │
+└───────────────────────────────────────────┘
+                    │
+                    │ Agent完成执行
+                    ▼
+┌───────────────────────────────────────────┐
+│ AgentResult                               │
+│                                           │
+│  success                                  │
+│  output                                   │
+│  metadata                                 │
+│                                           │
+│  Agent → Agent communication              │
+└───────────────────────────────────────────┘
+                    │
+                    │ 业务结果
+                    ▼
+┌───────────────────────────────────────────┐
+│ SharedContext                             │
+│                                           │
+│  research.report                          │
+│  ...                                      │
+│                                           │
+│  Execution-wide shared business state     │
+└───────────────────────────────────────────┘
+```
+
+## Step 14: Multi-Agent State Boundary & Checkpoint
+
+### 再次确认结构
+
+```text
+ExecutionRuntime
+        │
+        ▼
+RuntimeContext
+        │
+        ├── trace
+        ├── shared_context
+        └── runtime_id
+                │
+        ┌───────┴────────┐
+        ▼                ▼
+Supervisor           ResearchAgent
+ExecutionContext    ExecutionContext
+        │                │
+        ├── state        ├── state
+        │                │
+        └── loop         └── loop
+             │                 │
+             ▼                 ▼
+        Observation       Observation
+             │                 │
+             ▼                 ▼
+       Agent reasoning   Agent reasoning
+```
+

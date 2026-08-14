@@ -37,6 +37,7 @@ class ResearchAgent(BaseAgent):
 
     Those responsibilities belong to AgentOS Runtime.
     """
+    RESEARCH_REPORT_KEY = "research.report"
 
     def __init__(self,
                  identity: AgentIdentity,
@@ -95,7 +96,6 @@ class ResearchAgent(BaseAgent):
                 return AgentResult(
                     success=False,
                     output=None,
-                    observations=[observation],
                     metadata={
                         "agent_id": self.identity.agent_id,
                         "agent_type": self.identity.agent_type,
@@ -292,8 +292,11 @@ class ResearchAgent(BaseAgent):
 
     def _build_final_result(self, research_task, agent_execution_context):
         """
-        Build the final AgentResult from the accumulated
-        Agent observations.
+        Build the final AgentResult from accumulated observations.
+
+        The resulting ResearchReport is also written into
+        RuntimeContext.shared_context so that other Agents
+        participating in the same execution can consume it.
         """
         observations = agent_execution_context.loop.observation_history
 
@@ -310,10 +313,14 @@ class ResearchAgent(BaseAgent):
             evidence=(),
         )
 
+        agent_execution_context.runtime_context.shared_context.set(
+            self.RESEARCH_REPORT_KEY,
+            report,
+        )
+
         return AgentResult(
             success=True,
             output=report,
-            observations=list(observations),
             metadata={
                 "agent_id": self.identity.agent_id,
                 "agent_type": self.identity.agent_type,
