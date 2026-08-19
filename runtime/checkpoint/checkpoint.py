@@ -42,6 +42,6 @@ class Checkpoint(BaseModel):
 
     # backward compatibility
 
-    task_id: str
+    task_id: str | None
 
     # create_at: datetime = Field(default_factory=datetime.utcnow)

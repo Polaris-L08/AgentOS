@@ -1419,28 +1419,56 @@ RiskAgent / StockAgent / ReportAgent
 ### 再次确认结构
 
 ```text
-ExecutionRuntime
-        │
-        ▼
-RuntimeContext
-        │
-        ├── trace
-        ├── shared_context
-        └── runtime_id
-                │
-        ┌───────┴────────┐
-        ▼                ▼
-Supervisor           ResearchAgent
-ExecutionContext    ExecutionContext
-        │                │
-        ├── state        ├── state
-        │                │
-        └── loop         └── loop
-             │                 │
-             ▼                 ▼
-        Observation       Observation
-             │                 │
-             ▼                 ▼
-       Agent reasoning   Agent reasoning
+                    ExecutionRuntime
+                           │
+                           ▼
+                    RuntimeContext
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+     Supervisor        ResearchAgent     RiskAgent
+     ExecutionCtx      ExecutionCtx      ExecutionCtx
+          │                │                │
+          └────────────────┼────────────────┘
+                           │
+                           ▼
+                 CheckpointCoordinator
+                           │
+                           ▼
+                      Checkpoint
+                  ┌─────────────────┐
+                  │ runtime_id      │
+                  │ shared_context  │
+                  │ agents          │
+                  └─────────────────┘
+                           │
+                           ▼
+                    CheckpointStore
 ```
 
+> CheckpointCoordinator是Execution级别组件。它负责一次性收集所有AgentExecutionContext,
+> 而AgentExecutionContext本身不负责创建整个Checkpoint。
+
+
+## Step 15: Checkpoint Persistence (Checkpoint 持久化)
+
+## Step 16: Checkpoint Resume(从 Checkpoint 恢复 Multi-Agent Execution)
+
+> 已经保存的 Checkpoint，如何重新构造出可以继续执行的 Runtime 状态？
+
+```text
+Checkpoint
+    ↓
+重新建立 ExecutionRuntime
+    ↓
+重新建立 RuntimeContext
+    ↓
+恢复 SharedContext
+    ↓
+恢复所有 AgentExecutionContext
+```
+
+> Checkpoint Resume = State Restore + Execution Position Restore
+
+Execution Position 需要标识：**当前 Execution 在 orchestration 生命周期中的位置**

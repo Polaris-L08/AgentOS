@@ -9,6 +9,9 @@ from runtime.context.workspace_state import WorkspaceState
 
 
 class AgentContext(BaseModel):
+    """
+    Agent的长期上下文
+    """
 
     memory_state: MemoryState = Field(default_factory=MemoryState)
 
