@@ -1455,7 +1455,7 @@ RiskAgent / StockAgent / ReportAgent
 
 ## Step 16: Checkpoint Resume(从 Checkpoint 恢复 Multi-Agent Execution)
 
-> 已经保存的 Checkpoint，如何重新构造出可以继续执行的 Runtime 状态？
+> 让一个正在运行的 Multi-Agent Execution 在异常中断后，可以恢复到一致状态，并继续执行。
 
 ```text
 Checkpoint
@@ -1471,4 +1471,4 @@ Checkpoint
 
 > Checkpoint Resume = State Restore + Execution Position Restore
 
-Execution Position 需要标识：**当前 Execution 在 orchestration 生命周期中的位置**
+Execution Position 需要标识 **当前 Execution 在 orchestration 生命周期中的位置**。

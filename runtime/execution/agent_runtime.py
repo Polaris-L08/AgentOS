@@ -14,42 +14,67 @@ class AgentRuntime(RuntimeComponent):
     """
     Runtime responsible for Agent invocation.
 
-    It provides:
+    AgentRuntime is responsible for:
 
-        Agent A
-            |
-            |
-        AgentRuntime
-            |
-            |
-        Agent B
+        - creating AgentExecutionContext
+        - invoking an Agent
+        - executing Runtime middleware
+        - publishing Agent lifecycle events
 
+    AgentRuntime does NOT own:
 
-    It does NOT manage:
-
-        - Agent registry
+        - Agent decision making
+        - Workflow control
         - Agent lifecycle
-        - Agent discovery
+        - Agent registry
 
-    It only executes an Agent.
+    A normal invocation creates a new AgentExecutionContext.
+
+    A resumed invocation may provide an existing
+    AgentExecutionContext restored from a Checkpoint.
     """
 
     def __init__(self, publisher: EventPublisher | None = None, middleware_chain =None):
         super().__init__(middleware_chain)
         self._publisher = publisher
 
-    async def execute(self, agent: BaseAgent, task: TaskRequest, runtime_context: RuntimeContext) -> AgentResult:
+    async def execute(
+            self,
+            agent: BaseAgent,
+            task: TaskRequest,
+            runtime_context: RuntimeContext,
+            agent_execution_context: AgentExecutionContext | None = None,
+    ) -> AgentResult:
         """
-        Execute another Agent.
+        Execute one Agent.
 
-        Example:
+        Args:
+            agent:
+                Agent that should be invoked.
+            task:
+                Task being executed.
+            runtime_context:
+                Runtime-level context shared by all Agents
+                participating in this execution.
+            agent_execution_context:
+                Optional existing AgentExecutionContext.
 
-            supervisor.execute(
-                research_agent,
-                task,
-                context
-            )
+                If omitted, a new isolated execution context
+                is created.
 
+                If provided, the supplied context is reused.
+                This allows an Agent execution to continue from
+                a restored Checkpoint.
+
+        Returns:
+            AgentResult:
+                Result returned by the Agent.
+
+        Raises:
+            Exception:
+                Any exception raised by the Agent or Runtime
+                middleware is propagated after the failure
+                event is published.
         """
 
         operation = RuntimeOperation(
@@ -62,8 +87,36 @@ class AgentRuntime(RuntimeComponent):
             }
         )
 
-        # create isolated Agent execution context
-        agent_execution_context = AgentExecutionContext.create(runtime_context, agent.identity)
+        # ---------------------------------------------------------
+        # Execution Context
+        # ---------------------------------------------------------
+        #
+        # Normal execution:
+        #
+        #     no context supplied
+        #          ↓
+        #     create isolated context
+        #
+        # Resume execution:
+        #
+        #     restored context supplied
+        #          ↓
+        #     reuse restored context
+        #
+        if agent_execution_context is None:
+            agent_execution_context = AgentExecutionContext.create(runtime_context, agent.identity)
+        else:
+            # A restored context must belong to the same Agent.
+            if agent_execution_context.agent_identity.agent_id != agent.identity.agent_id:
+                raise ValueError(
+                    "AgentExecutionContext belongs to a different Agent:"
+                    f"{agent_execution_context.agent_identity.agent_id}"
+                )
+            # A restored context must also belong to the same Runtime execution.
+            if agent_execution_context.runtime_context.runtime_id != runtime_context.runtime_id:
+                raise ValueError(
+                    "AgentExecutionContext belongs to a different RuntimeContext."
+                )
 
         await self._publish(
             Event(
@@ -128,8 +181,15 @@ class AgentRuntime(RuntimeComponent):
                     correlation_id=runtime_context.runtime_id
                 )
             )
+            raise
 
     async def _publish(self, event: Event):
+        """
+        Publish an Agent lifecycle event.
+
+        Event publishing is optional because AgentRuntime can
+        operate without an EventPublisher in unit tests.
+        """
         if self._publisher is None:
             return
 

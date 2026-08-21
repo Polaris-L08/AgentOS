@@ -20,9 +20,10 @@ class SupervisorAgent(BaseAgent):
 
     Responsibilities:
         - understand the overall user task
-        - decide Agent invocation
+        - inspect information already produced by Agents
+        - decide the next Agent invocation
         - invoke Agents through AgentRuntime
-        - inspect AgentResult
+        - convert AgentResult into Supervisor Observation
         - decide whether to continue or finish
 
     It does NOT:
@@ -30,10 +31,16 @@ class SupervisorAgent(BaseAgent):
         - execute ResearchAgent directly
         - manage Middleware
         - manage Tracing
-        - manage AgentExecutionContext
+        - manage AgentExecutionContext lifecycle
         - manage Agent lifecycle
+        - manage Checkpoints
 
-    Agent execution is delegated to AgentRuntime.
+    AgentRuntime owns Agent invocation.
+
+    Checkpoint/Recovery is a Runtime responsibility.
+
+    The Supervisor only consumes the restored
+    AgentExecutionContext it receives through BaseAgent.run().
     """
     def __init__(
             self,
@@ -56,13 +63,18 @@ class SupervisorAgent(BaseAgent):
         """
         Execute one Supervisor task.
 
-        The Supervisor repeatedly decides whether another
-        Agent should be invoked or whether the overall task
-        can be completed.
+        The supplied AgentExecutionContext represents the current
+        Supervisor execution.
 
-        The Supervisor owns the orchestration decision.
+        During normal execution it is a newly created context.
 
-        AgentRuntime owns the actual Agent invocation.
+        During Checkpoint recovery it is a restored context.
+
+        Therefore this method intentionally does not create or
+        replace the execution context.
+
+        The Supervisor simply continues its decision loop using
+        the state that was supplied by AgentRuntime.
         """
 
         max_steps = 5
@@ -89,13 +101,9 @@ class SupervisorAgent(BaseAgent):
                     runtime_context=agent_execution_context.runtime_context,
                 )
 
-                observation = self._create_agent_observation(
-                    result
-                )
+                observation = self._create_agent_observation(result)
 
-                agent_execution_context.loop.observation_history.append(
-                    observation
-                )
+                agent_execution_context.loop.observation_history.append(observation)
 
                 if not result.success:
                     return AgentResult(
@@ -104,9 +112,7 @@ class SupervisorAgent(BaseAgent):
                         metadata={
                             "agent_id": self.identity.agent_id,
                             "agent_type": self.identity.agent_type,
-                            "delegated_agent": (
-                                self._research_agent.identity.agent_id
-                            ),
+                            "delegated_agent": self._research_agent.identity.agent_id,
                         },
                     )
 
@@ -128,12 +134,28 @@ class SupervisorAgent(BaseAgent):
         """
         Decide which downstream Agent should execute next.
 
-        The LLM only produces a decision.
-        Supervisor validates the decision before execution.
+        The decision is based on two kinds of information:
+
+            1. Supervisor-private execution history
+            2. Shared information produced by other Agents
+
+        Supervisor-private information:
+
+            AgentExecutionContext.loop.observation_history
+
+        Shared information:
+
+            RuntimeContext.shared_context
+
+        This distinction is important for Checkpoint recovery.
+
+        After restoring a Supervisor AgentExecutionContext and the
+        RuntimeContext, the Supervisor receives exactly the same
+        decision inputs that were available before the interruption.
         """
 
         shared_context = agent_execution_context.runtime_context.shared_context
-        research_report = shared_context.get("research.report")
+        research_report = shared_context.get(ResearchAgent.RESEARCH_REPORT_KEY)
 
         if research_report is None:
             shared_information = "None"
@@ -159,8 +181,14 @@ class SupervisorAgent(BaseAgent):
                     "to complete the current task.\n"
                     "\n"
                     "Important:\n"
-                    "You may choose research multiple times if additional "
-                    "research is necessary.\n"
+                    "Before selecting an Agent, inspect both the "
+                    "previous Supervisor observations and the shared "
+                    "information produced by previous Agents.\n"
+                    "\n"
+                    "Do not repeat an Agent invocation merely because "
+                    "the execution has been resumed. If the required "
+                    "information is already available, use that "
+                    "information when making the next decision.\n"
                     "\n"
                     "Return exactly one of:\n"
                     "research\n"
@@ -173,7 +201,7 @@ class SupervisorAgent(BaseAgent):
                     f"User task:\n{task.user_input}\n\n"
                     f"Previous Supervisor observations:\n"
                     f"{self._format_observations(agent_execution_context)}"
-                    f"Shared research information:\n"
+                    f"Shared information produced by previous Agent execution:\n"
                     f"{shared_information}\n\n"
                 ),
             ),
@@ -210,6 +238,12 @@ class SupervisorAgent(BaseAgent):
         """
         Format observations collected during this
         Supervisor execution.
+
+        Observation history belongs to the Supervisor's
+        private execution context.
+
+        It is therefore automatically part of the Supervisor
+        Checkpoint when the Supervisor context is checkpointed.
         """
 
         observations = agent_execution_context.loop.observation_history
