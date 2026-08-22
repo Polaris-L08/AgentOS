@@ -44,8 +44,7 @@ class AgentExecutionContext:
     @classmethod
     def create(cls, runtime_context: RuntimeContext, agent_identity: AgentIdentity) -> "AgentExecutionContext":
         """
-        Create isolated execution context.
-        for one Agent invocation.
+        Create isolated execution context for one Agent invocation.
         """
 
         return cls(runtime_context, agent_identity, ContextState(), LoopState())

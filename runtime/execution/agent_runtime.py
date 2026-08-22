@@ -134,14 +134,6 @@ class AgentRuntime(RuntimeComponent):
             )
         )
 
-        # async def invoke_agent() -> AgentResult:
-        #     return await agent.execute(task, child_context)
-
-        # return await self.invoke(
-        #     operation,
-        #     child_context,
-        #     invoke_agent
-        # )
         try:
             result = await self.invoke(
                 operation,
