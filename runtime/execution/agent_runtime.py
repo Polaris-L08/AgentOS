@@ -104,7 +104,7 @@ class AgentRuntime(RuntimeComponent):
         #     reuse restored context
         #
         if agent_execution_context is None:
-            agent_execution_context = AgentExecutionContext.create(runtime_context, agent.identity)
+            agent_execution_context = AgentExecutionContext.create(runtime_context, agent)
         else:
             # A restored context must belong to the same Agent.
             if agent_execution_context.agent_identity.agent_id != agent.identity.agent_id:
