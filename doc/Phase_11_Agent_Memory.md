@@ -109,3 +109,51 @@ Agent Instance
 这是事实上是Memory Scope的问题。会在后续进行进一步讨论。
 
 
+## Lesson 4: Memory Access Model
+
+### Lesson 4 目标
+
+> Agent 在什么情况下应该读 Memory、写 Memory，以及 Runtime 如何控制这种访问？
+
+把：
+
+```text
+Agent
+   ↓
+memory.write()
+memory.read()
+```
+
+提升为：
+
+```text
+Agent
+   ↓
+MemoryRuntime
+   ↓
+Memory Access Policy
+   ↓
+MemoryStore
+```
+
+> MemoryStore 决定“怎么存”，MemoryRuntime 决定“怎么访问”。
+
+### 为什么需要Access Model
+
+当存在多个Agent时，控制每个Agent的读写权限。
+
+### 设计边界
+
+```text
+MemoryRuntime
+    ↓
+MemoryAccessPolicy
+    ↓
+MemoryStore
+```
+
+**MemoryRuntime**: 执行Memory操作
+
+**AccessPolicy**： 这个操作是否允许
+
+**MemoryStore**： 数据如何保存

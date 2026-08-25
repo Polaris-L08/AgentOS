@@ -1,9 +1,13 @@
-from runtime.memory.in_memory_memory_store import InMemoryMemoryStore
-from runtime.memory.memory_store import MemoryStore
-from runtime.memory.memory_runtime import MemoryRuntime
+from .in_memory_memory_store import InMemoryMemoryStore
+from .memory_access_policy import MemoryAccessPolicy
+from .memory_operation import MemoryOperation
+from .memory_runtime import MemoryRuntime
+from .memory_store import MemoryStore
 
 __all__ = [
     "MemoryRuntime",
     "MemoryStore",
-    "InMemoryMemoryStore"
+    "InMemoryMemoryStore",
+    "MemoryOperation",
+    "MemoryAccessPolicy",
 ]
