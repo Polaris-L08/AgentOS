@@ -8,6 +8,7 @@ from runtime.memory.in_memory_memory_store import InMemoryMemoryStore
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_runtime import MemoryRuntime
 from runtime.memory.memory_scope import MemoryScope, MemoryScopeType
+from runtime.memory.memory_scope_resolver import DefaultMemoryScopeResolver
 from runtime.memory.memory_store import MemoryStore
 from .agent_result import AgentResult
 
@@ -31,16 +32,22 @@ class BaseAgent(RuntimeComponent, ABC):
         # Agent invocations.
         self.context = AgentContext()
 
-        # Memory is an Agent capability with a separate runtime and
-        # storage boundary. The default store is intentionally in-memory
-        # for the current Phase11 implementation.
+        scope_resolver = (
+            DefaultMemoryScopeResolver(
+                scopes=[
+                    MemoryScope(
+                        type=MemoryScopeType.AGENT,
+                        id=identity.agent_id,
+                    )
+                ]
+            )
+        )
+
         self.memory = MemoryRuntime(
-            scope=MemoryScope(
-                type=MemoryScopeType.AGENT,
-                id=identity.agent_id,
-            ),
+            scope_resolver=scope_resolver,
             store=memory_store or InMemoryMemoryStore(),
             access_policy=memory_access_policy,
+            middleware_chain=middleware_chain,
         )
 
     async def execute(self, task, agent_execution_context: AgentExecutionContext):

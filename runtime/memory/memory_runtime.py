@@ -6,6 +6,7 @@ from runtime.context.runtime_context import RuntimeContext
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_operation import MemoryOperation
 from runtime.memory.memory_scope import MemoryScope
+from runtime.memory.memory_scope_resolver import MemoryScopeResolver
 from runtime.memory.memory_store import MemoryStore
 from runtime.middleware.runtime_operation import RuntimeOperation
 
@@ -14,27 +15,19 @@ class MemoryRuntime(RuntimeComponent):
     """
     Runtime boundary for Agent Memory.
 
-    MemoryRuntime separates Agent-facing memory operations from the
-    concrete storage implementation.
+    MemoryRuntime is responsible for:
 
-    Architecture:
+    - Memory access control
+    - Memory scope resolution
+    - Runtime middleware integration
+    - Delegating persistence to MemoryStore
 
-        Agent
-          |
-          v
-        MemoryRuntime
-          |
-          v
-        MemoryStore
-
-    MemoryRuntime owns the Agent-scoped identity used when accessing
-    the Store. Agents therefore do not need to pass agent_id on every
-    memory operation and do not need to know which Store is used.
+    MemoryRuntime does not implement storage itself.
     """
 
     def __init__(
         self,
-        scope: MemoryScope,
+        scope_resolver: MemoryScopeResolver,
         store: MemoryStore,
         access_policy: MemoryAccessPolicy | None = None,
         middleware_chain=None,
@@ -42,15 +35,53 @@ class MemoryRuntime(RuntimeComponent):
 
         super().__init__(middleware_chain)
 
-        self.scope = scope
+        self._scope_resolver = scope_resolver
         self._store = store
+
         self._access_policy = access_policy or MemoryAccessPolicy()
 
-    def _check_access(self, operation: MemoryOperation) -> None:
+    # =========================================================
+    # Scope Resolution
+    # =========================================================
+    def _resolve_scopes(self) -> list[MemoryScope]:
+        """
+        Resolve Memory scopes in priority order.
+        """
+        return self._scope_resolver.resolve()
+
+    def _resolve_write_scope(self) -> MemoryScope:
+        """
+        Resolve the primary scope used for write operations.
+
+        The first resolved scope has the highest priority and
+        is therefore the primary write scope.
+        """
+        scopes = self._resolve_scopes()
+
+        if not scopes:
+            raise RuntimeError(
+                "No memory scope is available for write."
+            )
+
+        return scopes[0]
+
+    # =========================================================
+    # Access Control
+    # =========================================================
+
+    def _check_access(
+        self,
+        operation: MemoryOperation,
+    ) -> None:
+        """
+        Validate whether the requested Memory operation
+        is allowed by the configured access policy.
+        """
         if not self._access_policy.allows(operation):
             raise PermissionError(
-                f"Memory operation '{operation.value}' is not allowed for scope"
-                f"'{self.scope.type.value}: {self.scope.id}'."
+                f"Memory operation "
+                f"'{operation.value}' "
+                f"is not allowed."
             )
 
     async def write(
@@ -58,14 +89,20 @@ class MemoryRuntime(RuntimeComponent):
         item: MemoryItem,
         runtime_context: RuntimeContext,
     ) -> None:
+        """
+        Write Memory to the primary Memory scope.
+        Write operations never write to all resolved scopes.
+        """
         self._check_access(MemoryOperation.WRITE)
+
+        scope = self._resolve_write_scope()
 
         operation = RuntimeOperation(
             name="memory.write",
             component="memory_runtime",
             metadata={
-                "scope_type": self.scope.type.value,
-                "scope_id": self.scope.id,
+                "scope_type": scope.type.value,
+                "scope_id": scope.id,
             },
         )
 
@@ -73,7 +110,7 @@ class MemoryRuntime(RuntimeComponent):
             operation,
             runtime_context,
             self._store.write,
-            self.scope,
+            scope,
             item,
         )
 
@@ -81,23 +118,36 @@ class MemoryRuntime(RuntimeComponent):
         self,
         runtime_context: RuntimeContext,
     ) -> list[MemoryItem]:
+        """
+        Read Memory from all resolved scopes.
+
+        Scope ordering is preserved.
+        Higher-priority scopes are returned first.
+        """
         self._check_access(MemoryOperation.READ)
 
-        operation = RuntimeOperation(
-            name="memory.read",
-            component="memory_runtime",
-            metadata={
-                "scope_type": self.scope.type.value,
-                "scope_id": self.scope.id,
-            },
-        )
+        scopes = self._resolve_scopes()
+        memories: list[MemoryItem] = []
 
-        return await self.invoke(
-            operation,
-            runtime_context,
-            self._store.read,
-            self.scope,
-        )
+        for scope in scopes:
+            operation = RuntimeOperation(
+                name="memory.read",
+                component="memory_runtime",
+                metadata={
+                    "scope_type": scope.type.value,
+                    "scope_id": scope.id,
+                },
+            )
+            result = await self.invoke(
+                operation,
+                runtime_context,
+                self._store.read,
+                scope
+            )
+
+            memories.extend(result)
+
+        return memories
 
     async def query(
         self,
@@ -105,64 +155,127 @@ class MemoryRuntime(RuntimeComponent):
         runtime_context: RuntimeContext,
         limit: int = 10,
     ) -> list[MemoryItem]:
+        """
+        Query Memory across all resolved scopes.
+
+        Scope priority is preserved.
+
+        The global result count never exceeds `limit`.
+        """
         self._check_access(MemoryOperation.READ)
 
-        operation = RuntimeOperation(
-            name="memory.query",
-            component="memory_runtime",
-            metadata={
-                "scope_type": self.scope.type.value,
-                "scope_id": self.scope.id,
-                "limit": limit,
-            },
-        )
+        if limit <= 0:
+            return []
 
-        return await self.invoke(
-            operation,
-            runtime_context,
-            self._store.query,
-            self.scope,
-            query,
-            limit,
-        )
+        scopes = self._resolve_scopes()
+        memories: list[MemoryItem] = []
+
+        for scope in scopes:
+            remaining = limit - len(memories)
+
+            if remaining <= 0:
+                break
+
+            operation = RuntimeOperation(
+                name="memory.query",
+                component="memory_runtime",
+                metadata={
+                    "scope_type": scope.type.value,
+                    "scope_id": scope.id,
+                    "limit": remaining,
+                },
+            )
+
+            result = await self.invoke(
+                operation,
+                runtime_context,
+                self._store.query,
+                scope,
+                query,
+                remaining,
+            )
+            memories.extend(result)
+
+        return memories[:limit]
 
     async def forget(
         self,
         memory_id: str,
         runtime_context: RuntimeContext,
     ) -> None:
+        """
+        Remove a Memory item from the first resolved scope
+        containing the specified Memory ID.
+
+        Scope priority is respected.
+        """
         self._check_access(MemoryOperation.DELETE)
 
-        operation = RuntimeOperation(
-            name="memory.forget",
-            component="memory_runtime",
-            metadata={
-                "scope_type": self.scope.type.value,
-                "scope_id": self.scope.id,
-                "memory_id": memory_id,
-            },
-        )
+        scopes = self._resolve_scopes()
 
-        await self.invoke(
-            operation,
-            runtime_context,
-            self._store.forget,
-            self.scope,
-            memory_id,
-        )
+        for scope in scopes:
+            read_operation = RuntimeOperation(
+                name="memory.read",
+                component="memory_runtime",
+                metadata={
+                    "scope_type": scope.type.value,
+                    "scope_id": scope.id,
+                },
+            )
+            memories = await self.invoke(
+                read_operation,
+                runtime_context,
+                self._store.read,
+                scope,
+            )
+
+            found = any(item.id == memory_id for item in memories)
+
+            if not found:
+                continue
+
+            forget_operation = RuntimeOperation(
+                name="memory.forget",
+                component="memory_runtime",
+                metadata={
+                    "scope_type": scope.type.value,
+                    "scope_id": scope.id,
+                    "memory_id": memory_id,
+                },
+            )
+
+            await self.invoke(
+                forget_operation,
+                runtime_context,
+                self._store.forget,
+                scope,
+                memory_id,
+            )
+
+            return
 
     async def clear(
         self,
         runtime_context: RuntimeContext,
     ) -> None:
-        self._check_access(MemoryOperation.DELETE)
+        """
+        Clear Memory from the primary Memory scope only.
+
+        Shared scopes must never be cleared implicitly.
+        """
+
+        self._check_access(
+            MemoryOperation.DELETE
+        )
+
+        scope = self._resolve_write_scope()
 
         operation = RuntimeOperation(
             name="memory.clear",
             component="memory_runtime",
             metadata={
-                "scope_type": self.scope.type.value,
-                "scope_id": self.scope.id,
+                "scope_type": scope.type.value,
+                "scope_id": scope.id,
             },
         )
 
@@ -170,5 +283,5 @@ class MemoryRuntime(RuntimeComponent):
             operation,
             runtime_context,
             self._store.clear,
-            self.scope,
+            scope,
         )

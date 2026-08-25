@@ -1,16 +1,25 @@
-from .in_memory_memory_store import InMemoryMemoryStore
-from .memory_access_policy import MemoryAccessPolicy
-from .memory_operation import MemoryOperation
-from .memory_runtime import MemoryRuntime
-from .memory_store import MemoryStore
-from .memory_scope import MemoryScope, MemoryScopeType
+from runtime.memory.in_memory_memory_store import InMemoryMemoryStore
+from runtime.memory.memory_access_policy import MemoryAccessPolicy
+from runtime.memory.memory_operation import MemoryOperation
+from runtime.memory.memory_runtime import MemoryRuntime
+from runtime.memory.memory_scope import (
+    MemoryScope,
+    MemoryScopeType,
+)
+from runtime.memory.memory_scope_resolver import (
+    DefaultMemoryScopeResolver,
+    MemoryScopeResolver,
+)
+from runtime.memory.memory_store import MemoryStore
 
 __all__ = [
-    "MemoryRuntime",
-    "MemoryStore",
+    "DefaultMemoryScopeResolver",
     "InMemoryMemoryStore",
-    "MemoryOperation",
     "MemoryAccessPolicy",
+    "MemoryOperation",
+    "MemoryRuntime",
     "MemoryScope",
+    "MemoryScopeResolver",
     "MemoryScopeType",
+    "MemoryStore",
 ]

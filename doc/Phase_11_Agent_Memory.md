@@ -169,3 +169,53 @@ MemoryStore
 
 不在现在加入： `USER`、`PROJECT`、`SESSION`、`SHARED`等。因为现在还没有User/Project等完整生命周期。
 
+
+## Lesson 6: Multi-Scope Memory / Scope Resolution
+
+> 当一个 Agent 同时拥有多个 Memory Scope 时，MemoryRuntime 到底访问哪个 Scope？
+
+根据Lesson 5中的结构，一个Agent拥有两个`MemoryScope`:
+
+```text
+Agent A
+│
+├── AGENT
+│     └── research-001
+│
+└── AGENT_TYPE
+      └── research-agent
+```
+
+同时拥有： `Private Memory + Agent-Type Shared Memory`
+
+那么调用 `agent.memory.read(context)` 应该返回 `AGENT Memory` 还是 `AGENT + AGENT_TYPE` ？
+
+这个过程就是 **Scope Resolution(Scope解析)**
+
+### ScopeResolver 的职责
+
+**MemoryStore** 负责 **给定一个Scope，操作这个Scope 下的Memory。**
+
+因此，增加 `MemoryScopeResolver` 承担Runtime层的语义。
+
+> 当前 Memory 操作应该使用哪些Scope? 
+> 
+> Resolver不读取 Memory, 只负责 Scope。
+
+### 第一版 Resolution Policy
+
+> Private Memory 优先，Shared Agent-Type Memory 次之。
+
+因此， `resolve()` 返回：
+
+```text
+[
+    AGENT(research-001),
+    AGENT_TYPE(research-agent),
+]
+```
+
+顺序本身就是语义的一部分。 顺序就是优先级（AGENT > AGENT_TYPE）
+
+>  越具体的 Scope 优先于越泛化的 Scope。
+
