@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 
 from reflection.reflection_state import ReflectionState
 from runtime.context.history_state import HistoryState
-from runtime.context.memory_state import MemoryState
 from runtime.context.scratchpad_state import ScratchpadState
 from runtime.context.variable_state import VariableState
 from runtime.context.workspace_state import WorkspaceState
@@ -10,10 +9,13 @@ from runtime.context.workspace_state import WorkspaceState
 
 class AgentContext(BaseModel):
     """
-    Agent的长期上下文
-    """
+    Long-lived state owned by one Agent instance.
 
-    memory_state: MemoryState = Field(default_factory=MemoryState)
+    AgentContext is separate from AgentExecutionContext.
+
+    Long-term Memory is not stored in AgentContext.
+    It is exposed through the Agent's MemoryRuntime.
+    """
 
     scratchpad_state: ScratchpadState = Field(default_factory=ScratchpadState)
 

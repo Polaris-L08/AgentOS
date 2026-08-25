@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -22,4 +22,4 @@ class MemoryItem(BaseModel):
 
     source: MemorySource = MemorySource.HISTORY
 
-    timestamp: str = Field(default_factory=lambda: str(datetime.utcnow))
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

@@ -4,8 +4,9 @@ from runtime.context.agent_context import AgentContext
 
 
 class ContextState(BaseModel):
+    pass
 
-    agent_context: AgentContext = Field(default_factory=AgentContext)
+    # agent_context: AgentContext = Field(default_factory=AgentContext)
 
     # 业务领域
     # domain_context: BaseModel | None = Field(default_factory=BaseModel)

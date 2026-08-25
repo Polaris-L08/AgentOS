@@ -99,3 +99,13 @@ Agent Instance
       │
       └── identity
 ```
+
+## Lesson 3: Memory Runtime 实现
+
+关于使用`agent_id`作为`MemoryStore`中的key值：
+
+事实上`agent_id`和`agent_type`都不能天然成为Memory的正确Key。
+
+这是事实上是Memory Scope的问题。会在后续进行进一步讨论。
+
+
