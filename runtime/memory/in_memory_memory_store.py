@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from runtime.context.memory_item import MemoryItem
+from runtime.memory.memory_scope import MemoryScope
 from runtime.memory.memory_store import MemoryStore
 
 
@@ -8,32 +9,30 @@ class InMemoryMemoryStore(MemoryStore):
     """
     In-process MemoryStore implementation.
 
-    This implementation is intentionally simple and is used
-    to establish Memory semantics before introducing external
-    persistence.
+    Memory is isolated by MemoryScope.
     """
 
     def __init__(self) -> None:
-        self._memories: dict[str, list[MemoryItem]] = {}
+        self._memories: dict[MemoryScope, list[MemoryItem]] = {}
 
     async def write(
         self,
-        agent_id: str,
+        scope: MemoryScope,
         item: MemoryItem,
     ) -> None:
-        self._memories.setdefault(agent_id, []).append(item)
+        self._memories.setdefault(scope, []).append(item)
 
     async def read(
         self,
-        agent_id: str,
+        scope: MemoryScope,
     ) -> list[MemoryItem]:
         return list(
-            self._memories.get(agent_id, [])
+            self._memories.get(scope, [])
         )
 
     async def query(
         self,
-        agent_id: str,
+        scope: MemoryScope,
         query: str,
         limit: int = 10,
     ) -> list[MemoryItem]:
@@ -45,13 +44,13 @@ class InMemoryMemoryStore(MemoryStore):
 
         if not normalized_query:
             return (
-                await self.read(agent_id)
+                await self.read(scope)
             )[:limit]
 
         matches = [
             item
             for item in self._memories.get(
-                agent_id,
+                scope,
                 [],
             )
             if normalized_query in item.content.lower()
@@ -61,16 +60,16 @@ class InMemoryMemoryStore(MemoryStore):
 
     async def forget(
         self,
-        agent_id: str,
+        scope: MemoryScope,
         memory_id: str,
     ) -> None:
 
-        memories = self._memories.get(agent_id)
+        memories = self._memories.get(scope)
 
         if memories is None:
             return
 
-        self._memories[agent_id] = [
+        self._memories[scope] = [
             item
             for item in memories
             if item.id != memory_id
@@ -78,10 +77,10 @@ class InMemoryMemoryStore(MemoryStore):
 
     async def clear(
         self,
-        agent_id: str,
+        scope: MemoryScope,
     ) -> None:
 
         self._memories.pop(
-            agent_id,
+            scope,
             None,
         )

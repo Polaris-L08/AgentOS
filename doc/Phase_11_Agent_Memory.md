@@ -157,3 +157,15 @@ MemoryStore
 **AccessPolicy**： 这个操作是否允许
 
 **MemoryStore**： 数据如何保存
+
+
+## Lesson 5: MemoryScope
+
+本节引入`MemoryScope`，用来终结 Memory 的key使用`agent_id`还是`agent_type`。
+
+> 把 Memory 的“归属关系”从`agent_id`中抽象出来。
+
+暂时只定义两个Scope: `AGENT`和`AGENT_TYPE`
+
+不在现在加入： `USER`、`PROJECT`、`SESSION`、`SHARED`等。因为现在还没有User/Project等完整生命周期。
+

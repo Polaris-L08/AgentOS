@@ -7,6 +7,7 @@ from runtime.context.agent_context import AgentContext
 from runtime.memory.in_memory_memory_store import InMemoryMemoryStore
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_runtime import MemoryRuntime
+from runtime.memory.memory_scope import MemoryScope, MemoryScopeType
 from runtime.memory.memory_store import MemoryStore
 from .agent_result import AgentResult
 
@@ -34,9 +35,12 @@ class BaseAgent(RuntimeComponent, ABC):
         # storage boundary. The default store is intentionally in-memory
         # for the current Phase11 implementation.
         self.memory = MemoryRuntime(
-            agent_id=identity.agent_id,
+            scope=MemoryScope(
+                type=MemoryScopeType.AGENT,
+                id=identity.agent_id,
+            ),
             store=memory_store or InMemoryMemoryStore(),
-            access_policy=memory_access_policy
+            access_policy=memory_access_policy,
         )
 
     async def execute(self, task, agent_execution_context: AgentExecutionContext):

@@ -5,6 +5,7 @@ from runtime.context.memory_item import MemoryItem
 from runtime.context.runtime_context import RuntimeContext
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_operation import MemoryOperation
+from runtime.memory.memory_scope import MemoryScope
 from runtime.memory.memory_store import MemoryStore
 from runtime.middleware.runtime_operation import RuntimeOperation
 
@@ -33,7 +34,7 @@ class MemoryRuntime(RuntimeComponent):
 
     def __init__(
         self,
-        agent_id: str,
+        scope: MemoryScope,
         store: MemoryStore,
         access_policy: MemoryAccessPolicy | None = None,
         middleware_chain=None,
@@ -41,15 +42,15 @@ class MemoryRuntime(RuntimeComponent):
 
         super().__init__(middleware_chain)
 
-        self.agent_id = agent_id
+        self.scope = scope
         self._store = store
         self._access_policy = access_policy or MemoryAccessPolicy()
 
     def _check_access(self, operation: MemoryOperation) -> None:
         if not self._access_policy.allows(operation):
             raise PermissionError(
-                f"Memory operation '{operation.value}' is not allowed "
-                f"for agent '{self.agent_id}'."
+                f"Memory operation '{operation.value}' is not allowed for scope"
+                f"'{self.scope.type.value}: {self.scope.id}'."
             )
 
     async def write(
@@ -62,14 +63,17 @@ class MemoryRuntime(RuntimeComponent):
         operation = RuntimeOperation(
             name="memory.write",
             component="memory_runtime",
-            metadata={"agent_id": self.agent_id},
+            metadata={
+                "scope_type": self.scope.type.value,
+                "scope_id": self.scope.id,
+            },
         )
 
         await self.invoke(
             operation,
             runtime_context,
             self._store.write,
-            self.agent_id,
+            self.scope,
             item,
         )
 
@@ -82,14 +86,17 @@ class MemoryRuntime(RuntimeComponent):
         operation = RuntimeOperation(
             name="memory.read",
             component="memory_runtime",
-            metadata={"agent_id": self.agent_id},
+            metadata={
+                "scope_type": self.scope.type.value,
+                "scope_id": self.scope.id,
+            },
         )
 
         return await self.invoke(
             operation,
             runtime_context,
             self._store.read,
-            self.agent_id,
+            self.scope,
         )
 
     async def query(
@@ -104,7 +111,8 @@ class MemoryRuntime(RuntimeComponent):
             name="memory.query",
             component="memory_runtime",
             metadata={
-                "agent_id": self.agent_id,
+                "scope_type": self.scope.type.value,
+                "scope_id": self.scope.id,
                 "limit": limit,
             },
         )
@@ -113,7 +121,7 @@ class MemoryRuntime(RuntimeComponent):
             operation,
             runtime_context,
             self._store.query,
-            self.agent_id,
+            self.scope,
             query,
             limit,
         )
@@ -129,7 +137,8 @@ class MemoryRuntime(RuntimeComponent):
             name="memory.forget",
             component="memory_runtime",
             metadata={
-                "agent_id": self.agent_id,
+                "scope_type": self.scope.type.value,
+                "scope_id": self.scope.id,
                 "memory_id": memory_id,
             },
         )
@@ -138,7 +147,7 @@ class MemoryRuntime(RuntimeComponent):
             operation,
             runtime_context,
             self._store.forget,
-            self.agent_id,
+            self.scope,
             memory_id,
         )
 
@@ -151,12 +160,15 @@ class MemoryRuntime(RuntimeComponent):
         operation = RuntimeOperation(
             name="memory.clear",
             component="memory_runtime",
-            metadata={"agent_id": self.agent_id},
+            metadata={
+                "scope_type": self.scope.type.value,
+                "scope_id": self.scope.id,
+            },
         )
 
         await self.invoke(
             operation,
             runtime_context,
             self._store.clear,
-            self.agent_id,
+            self.scope,
         )

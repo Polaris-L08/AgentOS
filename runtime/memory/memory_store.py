@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from runtime.context.memory_item import MemoryItem
+from runtime.memory.memory_scope import MemoryScope
 
 
 class MemoryStore(ABC):
@@ -25,7 +26,7 @@ class MemoryStore(ABC):
     @abstractmethod
     async def write(
         self,
-        agent_id: str,
+        scope: MemoryScope,
         item: MemoryItem,
     ) -> None:
         """Persist one memory item for an Agent."""
@@ -34,7 +35,7 @@ class MemoryStore(ABC):
     @abstractmethod
     async def read(
         self,
-        agent_id: str,
+        scope: MemoryScope,
     ) -> list[MemoryItem]:
         """Return all memory items belonging to an Agent."""
         raise NotImplementedError
@@ -42,7 +43,7 @@ class MemoryStore(ABC):
     @abstractmethod
     async def query(
         self,
-        agent_id: str,
+        scope: MemoryScope,
         query: str,
         limit: int = 10,
     ) -> list[MemoryItem]:
@@ -52,7 +53,7 @@ class MemoryStore(ABC):
     @abstractmethod
     async def forget(
         self,
-        agent_id: str,
+        scope: MemoryScope,
         memory_id: str,
     ) -> None:
         """Delete one memory item belonging to an Agent."""
@@ -61,7 +62,7 @@ class MemoryStore(ABC):
     @abstractmethod
     async def clear(
         self,
-        agent_id: str,
+        scope: MemoryScope,
     ) -> None:
         """Delete all memory items belonging to an Agent."""
         raise NotImplementedError
