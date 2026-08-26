@@ -321,3 +321,18 @@ MemoryRetriever 是纯计算策略。
  - 不属于 Runtime Component
  - 不产生独立生命周期操作
 
+
+## Lesson 8: Memory Lifecycle
+
+相同的message在不同的时间意义完全不同。
+
+在本节加入： MemoryMetadata 
+
+```text
+MemoryItem
+├── id
+├── content
+└── metadata
+      ├── created_at
+      └── expires_at
+```

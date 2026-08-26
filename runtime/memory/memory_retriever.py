@@ -50,14 +50,20 @@ class KeywordMemoryRetriever:
         if limit <= 0:
             return []
 
+        active_memories = [
+            item
+            for item in memories
+            if not item.is_expired()
+        ]
+
         normalized_query = query.strip().lower()
 
         if not normalized_query:
-            return memories[:limit]
+            return active_memories[:limit]
 
         matches = [
             item
-            for item in memories
+            for item in active_memories
             if normalized_query in item.content.lower()
         ]
 
