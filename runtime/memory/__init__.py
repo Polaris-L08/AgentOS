@@ -15,6 +15,10 @@ from runtime.memory.memory_scope_resolver import (
     MemoryScopeResolver,
 )
 from runtime.memory.memory_store import MemoryStore
+from runtime.memory.memory_ranker import (
+    ImportanceMemoryRanker,
+    MemoryRanker,
+)
 
 __all__ = [
     "DefaultMemoryScopeResolver",
@@ -28,4 +32,6 @@ __all__ = [
     "MemoryScopeResolver",
     "MemoryScopeType",
     "MemoryStore",
+    "ImportanceMemoryRanker",
+    "MemoryRanker",
 ]

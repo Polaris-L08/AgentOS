@@ -336,3 +336,11 @@ MemoryItem
       ├── created_at
       └── expires_at
 ```
+
+## Lesson 9: Memory Ranking
+
+当前查询会**按照Store返回的原始顺序返回**。因此，引入 Memory Ranking（记忆排序）。
+
+单独建立MemoryRanker的作用在于：职责分离，而且便于未来更加复杂的排序策略的扩展。
+
+新增

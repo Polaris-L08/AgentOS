@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from runtime.context.memory_item import MemoryItem
+from runtime.memory.memory_ranker import MemoryRanker, ImportanceMemoryRanker
 
 
 class MemoryRetriever(Protocol):
@@ -39,6 +40,11 @@ class KeywordMemoryRetriever:
     boundary. It is not intended to be the final retrieval
     implementation.
     """
+    def __init__(
+            self,
+            ranker: MemoryRanker | None = None,
+    ):
+        self._ranker = ranker or ImportanceMemoryRanker()
 
     def retrieve(
         self,
@@ -59,12 +65,14 @@ class KeywordMemoryRetriever:
         normalized_query = query.strip().lower()
 
         if not normalized_query:
-            return active_memories[:limit]
+            candidates = active_memories
+        else:
+            candidates = [
+                item
+                for item in active_memories
+                if normalized_query in item.content.lower()
+            ]
 
-        matches = [
-            item
-            for item in active_memories
-            if normalized_query in item.content.lower()
-        ]
+        ranked = self._ranker.rank(candidates,query)
 
-        return matches[:limit]
+        return ranked[:limit]
