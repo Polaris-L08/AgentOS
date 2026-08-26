@@ -219,3 +219,105 @@ Agent A
 
 >  越具体的 Scope 优先于越泛化的 Scope。
 
+
+## Lesson 7: Memory Retrieval Boundary
+
+当前的MemoryRuntime中包含以下方法：
+
+```text
+MemoryRuntime
+    │
+    ├── write()
+    ├── read()
+    ├── query()
+    ├── forget()
+    └── clear()
+```
+
+其中：write、forget、clear 属于 **Memory Lifecycle/Mutation**。
+
+而： read、query 属于 **Memory Retrieval**。
+
+因为当前Memory就是string，而未来可能会扩张为：
+
+```text
+Query
+   ↓
+Retrieval
+   ├── lexical search
+   ├── vector search
+   ├── metadata filtering
+   ├── recency
+   ├── relevance ranking
+   └── scope priority
+```
+
+所以，需要把`MemoryStore`和`Memory Retrieval`分开。
+
+### 职责划分
+
+**MemoryRuntime** 负责： 
+
+```text
+Access Control
+Scope Resolution
+Runtime Invocation
+Lifecycle
+```
+
+**MemoryRetriever** 负责：`如何从给定 Memory 集合中找到相关 Memory`
+
+**MemoryStore** 负责： `持久化`。
+
+### 第一版Retriever
+
+实现一个简单的`KeywordMemoryRetriever`，不做embedding。
+
+接口：
+
+```
+class MemoryRetriever(Protocol):
+
+    def retrieve(
+        self,
+        memories: list[MemoryItem],
+        query: str,
+        limit: int,
+    ) -> list[MemoryItem]:
+        ...
+```
+
+### 架构变化
+
+以前：
+
+```text
+MemoryRuntime.query()
+    ↓
+MemoryStore.query()
+```
+
+现在：
+
+```text
+MemoryRuntime.query()
+    ↓
+MemoryStore.read()
+    ↓
+candidate memories
+    ↓
+MemoryRetriever.retrieve()
+```
+
+Store 只负责： `给我这个 Scope 下有什么 Memory。`
+
+Retriever 负责： `在这些 Memory 中，哪些与 Query 相关？`
+
+MemoryRetriever 是纯计算策略。
+
+ - 不访问外部资源
+ - 不修改 Runtime State
+ - 不进行持久化
+ - 不属于 Runtime Component
+ - 不产生独立生命周期操作
+

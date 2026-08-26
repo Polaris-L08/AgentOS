@@ -30,34 +30,6 @@ class InMemoryMemoryStore(MemoryStore):
             self._memories.get(scope, [])
         )
 
-    async def query(
-        self,
-        scope: MemoryScope,
-        query: str,
-        limit: int = 10,
-    ) -> list[MemoryItem]:
-
-        if limit <= 0:
-            return []
-
-        normalized_query = query.strip().lower()
-
-        if not normalized_query:
-            return (
-                await self.read(scope)
-            )[:limit]
-
-        matches = [
-            item
-            for item in self._memories.get(
-                scope,
-                [],
-            )
-            if normalized_query in item.content.lower()
-        ]
-
-        return matches[:limit]
-
     async def forget(
         self,
         scope: MemoryScope,

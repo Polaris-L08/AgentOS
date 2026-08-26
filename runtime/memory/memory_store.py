@@ -10,17 +10,11 @@ class MemoryStore(ABC):
     """
     Storage boundary for Agent Memory.
 
-    MemoryStore is responsible only for storing and retrieving
-    MemoryItem objects.
+    MemoryStore is responsible only for persistence and
+    retrieval of raw Memory items belonging to a specific
+    MemoryScope.
 
-    It does not know about:
-
-    - Agent reasoning
-    - AgentExecutionContext
-    - Workflow
-    - Tool execution
-
-    The agent_id argument establishes the storage isolation boundary.
+    Semantic retrieval is handled by MemoryRetriever.
     """
 
     @abstractmethod
@@ -38,16 +32,6 @@ class MemoryStore(ABC):
         scope: MemoryScope,
     ) -> list[MemoryItem]:
         """Return all memory items belonging to an Agent."""
-        raise NotImplementedError
-
-    @abstractmethod
-    async def query(
-        self,
-        scope: MemoryScope,
-        query: str,
-        limit: int = 10,
-    ) -> list[MemoryItem]:
-        """Return memory items matching a query."""
         raise NotImplementedError
 
     @abstractmethod

@@ -5,6 +5,7 @@ from runtime.context.memory_item import MemoryItem
 from runtime.context.runtime_context import RuntimeContext
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_operation import MemoryOperation
+from runtime.memory.memory_retriever import MemoryRetriever, KeywordMemoryRetriever
 from runtime.memory.memory_scope import MemoryScope
 from runtime.memory.memory_scope_resolver import MemoryScopeResolver
 from runtime.memory.memory_store import MemoryStore
@@ -15,20 +16,23 @@ class MemoryRuntime(RuntimeComponent):
     """
     Runtime boundary for Agent Memory.
 
-    MemoryRuntime is responsible for:
+    Responsibilities:
 
     - Memory access control
     - Memory scope resolution
+    - Candidate Memory loading
+    - Memory retrieval
     - Runtime middleware integration
-    - Delegating persistence to MemoryStore
+    - Memory mutation delegation
 
-    MemoryRuntime does not implement storage itself.
+    MemoryRuntime does not implement persistence itself.
     """
 
     def __init__(
         self,
         scope_resolver: MemoryScopeResolver,
         store: MemoryStore,
+        retriever: MemoryRetriever | None = None,
         access_policy: MemoryAccessPolicy | None = None,
         middleware_chain=None,
     ) -> None:
@@ -37,6 +41,8 @@ class MemoryRuntime(RuntimeComponent):
 
         self._scope_resolver = scope_resolver
         self._store = store
+
+        self._retriever = retriever or KeywordMemoryRetriever()
 
         self._access_policy = access_policy or MemoryAccessPolicy()
 
@@ -171,32 +177,25 @@ class MemoryRuntime(RuntimeComponent):
         memories: list[MemoryItem] = []
 
         for scope in scopes:
-            remaining = limit - len(memories)
-
-            if remaining <= 0:
-                break
-
             operation = RuntimeOperation(
-                name="memory.query",
+                name="memory.read",
                 component="memory_runtime",
                 metadata={
                     "scope_type": scope.type.value,
                     "scope_id": scope.id,
-                    "limit": remaining,
                 },
             )
 
             result = await self.invoke(
                 operation,
                 runtime_context,
-                self._store.query,
+                self._store.read,
                 scope,
-                query,
-                remaining,
             )
+
             memories.extend(result)
 
-        return memories[:limit]
+        return self._retriever.retrieve(memories, query, limit)
 
     async def forget(
         self,
