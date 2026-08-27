@@ -495,3 +495,145 @@ Ranking Signals
         ↓
 Importance + Recency
 ```
+
+
+## Lesson 11： Candidate Retrieval 与 Retrieval Strategy
+
+当前的 `KeywordMemoryRetriever`事实上同时做了3件事：
+
+1. 过滤 expired Memory
+2. keyword matching
+3. 调用 Ranker
+
+随着系统的演进，这这三个职责会逐渐变得不够清晰。
+
+把 Retrieval 拆成两个概念： Candidate Retrieval(候选召回)、Ranking(排序)
+
+本节目标：
+
+> Candidate Retrieval Strategy 的抽象
+
+### 新增`MemoryCandidateRetriever`只负责 **Recall**。
+
+### 调整`MemoryRetriever`职责，作为orchestration-level abstraction：
+
+```text
+CandidateRetriever
+        ↓
+Ranker
+        ↓
+Top-K
+```
+
+### 扩展
+
+未来加入Vector,只需要增加：
+
+```python
+class VectorMemoryCandidateRetriever(
+    MemoryCandidateRetriever
+):
+    ...
+```
+
+```text
+DefaultMemoryRetriever
+       │
+       ├── VectorMemoryCandidateRetriever
+       │
+       └── ImportanceRecencyMemoryRanker
+```
+
+### Lesson 11 架构
+
+```text
+                      MemoryRuntime
+                            │
+                            ↓
+                     MemoryRetriever
+                            │
+                            ↓
+                  DefaultMemoryRetriever
+                            │
+                ┌───────────┴───────────┐
+                ↓                       ↓
+      MemoryCandidateRetriever      MemoryRanker
+                │                       │
+                ↓                       ↓
+KeywordMemoryCandidateRetriever   ImportanceMemoryRanker
+                                   ImportanceRecency...
+                │
+                ↓
+           Candidates
+                │
+                ↓
+             Ranking
+                │
+                ↓
+              Top-K
+```
+
+`KeywordMemoryRetriever` 已经被 `DefaultMemoryRetriever`代替
+
+```text
+Keyword Retrieval
++
+Ranking
++
+Limit
+```
+
+由`KeywordMemoryCandidateRetriever + DefaultMemoryRetriever`构成。
+
+### Lesson 11 修改清单
+
+ - 新增
+
+```text
+runtime/memory/memory_candidate_retriever.py
+
+tests/runtime/test_memory_candidate_retriever.py
+```
+
+ - 修改
+
+```text
+runtime/memory/memory_retriever.py
+
+tests/runtime/test_memory_retriever.py
+```
+
+ - 删除
+
+如果当前存在： `KeywordMemoryRetriever` 这个 Lesson9 具体实现，则删除它，
+
+由： `DefaultMemoryRetriever` 取代。
+
+### Lesson 11 最终结论
+
+建立以下边界：
+
+```text
+                Retrieval
+                   │
+          ┌────────┴────────┐
+          ↓                 ↓
+       Recall             Ranking
+          │                 │
+CandidateRetriever       Ranker
+          │                 │
+          ↓                 ↓
+     Candidates          Scores
+          │                 │
+          └────────┬────────┘
+                   ↓
+                  Top-K
+```
+
+**CandidateRetriever**:
+
+> “哪些 Memory 值得进入候选集？”
+
+**Ranker**:
+
+> “候选集中哪些 Memory 更值得进入 Context？”

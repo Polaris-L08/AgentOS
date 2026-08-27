@@ -1,21 +1,15 @@
 from typing import Protocol
 
 from runtime.context.memory_item import MemoryItem
+from runtime.memory.memory_candidate_retriever import MemoryCandidateRetriever, KeywordMemoryCandidateRetriever
 from runtime.memory.memory_ranker import MemoryRanker, ImportanceMemoryRanker
 
 
 class MemoryRetriever(Protocol):
     """
-    Strategy for retrieving relevant Memory items from
-    a collection of candidate Memory items.
+    High-level Memory retrieval strategy.
 
-    A MemoryRetriever does not know about:
-
-    - MemoryStore
-    - MemoryRuntime
-    - MemoryScope
-    - Agent
-    - RuntimeContext
+    Coordinates candidate retrieval, ranking and result limiting.
     """
 
     def retrieve(
@@ -27,23 +21,25 @@ class MemoryRetriever(Protocol):
         ...
 
 
-class KeywordMemoryRetriever(MemoryRetriever):
+class DefaultMemoryRetriever(MemoryRetriever):
     """
-    Simple keyword-based Memory retrieval strategy.
+    Default Memory retrieval pipeline.
 
-    The implementation is intentionally simple.
+    Pipeline:
 
-    It performs case-insensitive substring matching against
-    MemoryItem.content.
-
-    This implementation exists to establish the Retrieval
-    boundary. It is not intended to be the final retrieval
-    implementation.
+        candidate retrieval
+            ↓
+        ranking
+            ↓
+        limit
     """
     def __init__(
             self,
+            candidate_retriever: MemoryCandidateRetriever | None = None,
             ranker: MemoryRanker | None = None,
-    ):
+    ) -> None:
+        self._candidate_retriever = candidate_retriever or KeywordMemoryCandidateRetriever()
+
         self._ranker = ranker or ImportanceMemoryRanker()
 
     def retrieve(
@@ -56,23 +52,8 @@ class KeywordMemoryRetriever(MemoryRetriever):
         if limit <= 0:
             return []
 
-        active_memories = [
-            item
-            for item in memories
-            if not item.is_expired()
-        ]
+        candidates = self._candidate_retriever.retrieve(memories, query)
 
-        normalized_query = query.strip().lower()
-
-        if not normalized_query:
-            candidates = active_memories
-        else:
-            candidates = [
-                item
-                for item in active_memories
-                if normalized_query in item.content.lower()
-            ]
-
-        ranked = self._ranker.rank(candidates,query)
+        ranked = self._ranker.rank(candidates, query)
 
         return ranked[:limit]

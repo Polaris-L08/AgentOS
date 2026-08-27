@@ -3,7 +3,7 @@ import pytest
 from runtime.context.memory_item import MemoryItem
 from runtime.memory.in_memory_memory_store import InMemoryMemoryStore
 from runtime.memory.memory_retriever import (
-    KeywordMemoryRetriever,
+    DefaultMemoryRetriever,
 )
 from runtime.memory.memory_runtime import MemoryRuntime
 from runtime.memory.memory_scope import (
@@ -16,113 +16,86 @@ from runtime.memory.memory_scope_resolver import (
 
 
 # ============================================================
-# KeywordMemoryRetriever
+# DefaultMemoryRetriever
 # ============================================================
 
+def test_default_memory_retriever_ranks_candidates():
 
-def test_keyword_retriever_matches_case_insensitively():
-
-    retriever = KeywordMemoryRetriever()
-
-    item = MemoryItem(
-        content="NVIDIA quarterly revenue increased"
+    low = MemoryItem(
+        content="NVIDIA low",
+        importance=0.1,
     )
 
-    result = retriever.retrieve(
-        [item],
-        "nvidia",
+    high = MemoryItem(
+        content="NVIDIA high",
+        importance=0.9,
     )
 
-    assert result == [item]
-
-
-def test_keyword_retriever_returns_only_matching_items():
-
-    retriever = KeywordMemoryRetriever()
-
-    nvidia = MemoryItem(
-        content="NVIDIA research"
-    )
-
-    apple = MemoryItem(
-        content="Apple research"
-    )
+    retriever = DefaultMemoryRetriever()
 
     result = retriever.retrieve(
         [
-            nvidia,
-            apple,
+            low,
+            high,
         ],
-        "nvidia",
-    )
-
-    assert result == [nvidia]
-
-
-def test_keyword_retriever_respects_limit():
-
-    retriever = KeywordMemoryRetriever()
-
-    items = [
-        MemoryItem(
-            content=f"NVIDIA research {index}"
-        )
-        for index in range(5)
-    ]
-
-    result = retriever.retrieve(
-        items,
-        "nvidia",
-        limit=2,
-    )
-
-    assert result == items[:2]
-
-
-def test_keyword_retriever_non_positive_limit_returns_empty():
-
-    retriever = KeywordMemoryRetriever()
-
-    item = MemoryItem(
-        content="NVIDIA research"
-    )
-
-    assert retriever.retrieve(
-        [item],
-        "nvidia",
-        limit=0,
-    ) == []
-
-    assert retriever.retrieve(
-        [item],
-        "nvidia",
-        limit=-1,
-    ) == []
-
-
-def test_keyword_retriever_empty_query_returns_original_order():
-
-    retriever = KeywordMemoryRetriever()
-
-    first = MemoryItem(
-        content="first"
-    )
-
-    second = MemoryItem(
-        content="second"
-    )
-
-    result = retriever.retrieve(
-        [
-            first,
-            second,
-        ],
-        "",
+        "NVIDIA",
     )
 
     assert result == [
-        first,
+        high,
+        low,
+    ]
+
+class FixedCandidateRetriever:
+
+    def __init__(
+        self,
+        memories: list[MemoryItem],
+    ):
+        self.memories = memories
+
+    def retrieve(
+        self,
+        memories: list[MemoryItem],
+        query: str,
+    ) -> list[MemoryItem]:
+
+        return self.memories
+
+def test_default_memory_retriever_uses_candidate_retriever():
+
+    first = MemoryItem(
+        content="first",
+        importance=0.1,
+    )
+
+    second = MemoryItem(
+        content="second",
+        importance=0.9,
+    )
+
+    retriever = DefaultMemoryRetriever(
+        candidate_retriever=FixedCandidateRetriever(
+            [
+                first,
+                second,
+            ]
+        )
+    )
+
+    result = retriever.retrieve(
+        [
+            MemoryItem(
+                content="ignored",
+                importance=100,
+            )
+        ],
+        "test",
+    )
+
+    assert result == [
         second,
+        first,
     ]
 
 

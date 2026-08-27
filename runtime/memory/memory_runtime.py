@@ -5,7 +5,7 @@ from runtime.context.memory_item import MemoryItem
 from runtime.context.runtime_context import RuntimeContext
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_operation import MemoryOperation
-from runtime.memory.memory_retriever import MemoryRetriever, KeywordMemoryRetriever
+from runtime.memory.memory_retriever import MemoryRetriever, DefaultMemoryRetriever
 from runtime.memory.memory_scope import MemoryScope
 from runtime.memory.memory_scope_resolver import MemoryScopeResolver
 from runtime.memory.memory_store import MemoryStore
@@ -42,7 +42,7 @@ class MemoryRuntime(RuntimeComponent):
         self._scope_resolver = scope_resolver
         self._store = store
 
-        self._retriever = retriever or KeywordMemoryRetriever()
+        self._retriever = retriever or DefaultMemoryRetriever()
 
         self._access_policy = access_policy or MemoryAccessPolicy()
 

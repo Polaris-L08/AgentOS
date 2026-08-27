@@ -1,8 +1,8 @@
 from runtime.memory.in_memory_memory_store import InMemoryMemoryStore
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_retriever import (
-    KeywordMemoryRetriever,
     MemoryRetriever,
+    DefaultMemoryRetriever
 )
 from runtime.memory.memory_operation import MemoryOperation
 from runtime.memory.memory_runtime import MemoryRuntime
@@ -23,7 +23,7 @@ from runtime.memory.memory_ranker import (
 __all__ = [
     "DefaultMemoryScopeResolver",
     "InMemoryMemoryStore",
-    "KeywordMemoryRetriever",
+    "DefaultMemoryRetriever",
     "MemoryAccessPolicy",
     "MemoryOperation",
     "MemoryRetriever",
