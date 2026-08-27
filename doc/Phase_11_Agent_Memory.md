@@ -343,4 +343,155 @@ MemoryItem
 
 单独建立MemoryRanker的作用在于：职责分离，而且便于未来更加复杂的排序策略的扩展。
 
+
+## Lesson 10: Recency 时间相关性
+
+当前项目中，排序策略只考虑Importance, 但时间是一个非常重要的维度。
+
+所以当前阶段目标为：
+
+> Recency Score Normalization（新鲜度归一化）
+
+### 新增 RecencyScorer：
+
+```text
+MemoryItem
+     ↓
+created_at
+     ↓
+Recency Score
+     ↓
+0.0 ~ 1.0
+```
+
+### 对`ExponentialRecencyScorer(指数衰减`原理解释:
+
+```text
+score = exp(-λ × age)
+```
+
+```text
+age = 0
+    ↓
+score = 1
+
+age = half_life
+    ↓
+score = 0.5
+
+age → ∞
+    ↓
+score → 0
+```
+
+```text
+当 half_life_days = 30 时：
+
+刚创建       1.00
+30 天        0.50
+60 天        0.25
+90 天        0.125
+```
+
+### Half-Life 需是参数，原因如下：
+
+不同Memory的生命周期不同：
+
+ - 实时监控Agent： `half-life = 1 hour`
+ - ResearchAgent： `half-life = 30 days`
+ - Long-term Personal Assistant: `half-life = 365 days`
+
+### 当前架构：
+
+```text
+                    MemoryRuntime
+                          │
+                          ↓
+                     MemoryStore
+                          │
+                          ↓
+                  MemoryRetriever
+                          │
+                 ┌────────┴────────┐
+                 │                 │
+             Filtering         Retrieval
+                 │                 │
+                 └────────┬────────┘
+                          ↓
+                     Candidates
+                          │
+                          ↓
+                     MemoryRanker
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+          Importance              Recency
+              │                       │
+              │                MemoryMetadata
+              │                  created_at
+              │                       │
+              └───────────┬───────────┘
+                          ↓
+                     Final Ranking
+                          ↓
+                         Top-K
+```
+
+这里有一个很重要的变化：
+
+`MemoryItem` 仍然完全不知道：
+
+```text
+Ranking
+Scoring
+Retrieval
+```
+
+它只提供：
+
+```text
+importance
+source
+metadata
+```
+
+这就是正确的 Entity Boundary。
+
+### Lesson 10修改清单
+
 新增
+
+```text
+runtime/memory/memory_recency.py
+
+tests/runtime/test_memory_recency.py
+```
+
+修改
+
+```text
+runtime/memory/memory_ranker.py
+
+tests/runtime/test_memory_ranker.py
+```
+
+### Lesson 10 核心结论
+
+我们现在已经形成：
+
+```text
+Lesson8
+Memory Lifecycle
+        ↓
+created_at / expires_at
+
+Lesson9
+Ranking Boundary
+        ↓
+MemoryRanker
+
+Lesson10
+Ranking Signals
+        ↓
+Importance + Recency
+```

@@ -27,7 +27,7 @@ class MemoryRetriever(Protocol):
         ...
 
 
-class KeywordMemoryRetriever:
+class KeywordMemoryRetriever(MemoryRetriever):
     """
     Simple keyword-based Memory retrieval strategy.
 
