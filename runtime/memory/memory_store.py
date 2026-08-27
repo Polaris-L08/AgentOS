@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from runtime.context.memory_item import MemoryItem
+from runtime.memory.memory_query import MemoryQuery
 from runtime.memory.memory_scope import MemoryScope
 
 
@@ -49,4 +50,17 @@ class MemoryStore(ABC):
         scope: MemoryScope,
     ) -> None:
         """Delete all memory items belonging to an Agent."""
+        raise NotImplementedError
+
+    async def query(
+            self,
+            scope: MemoryScope,
+            query: MemoryQuery,
+    ) -> list[MemoryItem]:
+        """
+        Return memory items matching the query
+        within the specified scope.
+
+        Querying must never escape the supplied scope.
+        """
         raise NotImplementedError

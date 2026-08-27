@@ -637,3 +637,108 @@ CandidateRetriever       Ranker
 **Ranker**:
 
 > “候选集中哪些 Memory 更值得进入 Context？”
+
+
+## Lesson 12: Memory Query
+
+当前的DefaultMemoryRetriever流程大致为：
+
+```text
+memories = store.read(...)
+
+candidates = candidate_retriever.retrieve(
+    memories,
+    query,
+)
+```
+
+如果Store中数据量极大：
+
+```text
+MemoryStore
+    ↓
+读取 1,000,000 条
+    ↓
+Python
+    ↓
+KeywordMemoryCandidateRetriever
+    ↓
+筛选
+```
+
+合理的架构应该为：
+
+```text
+MemoryRuntime
+      ↓
+MemoryRetriever
+      ↓
+CandidateRetriever
+      ↓
+MemoryStore Query
+      ↓
+数据库 / Vector DB / Search Engine
+```
+
+目标为：
+
+> CandidateRetriever 决定“我要找什么”，Store 决定“如何高效地从持久化数据中找到它”。
+
+但是不能扩展 `read()` 方法。否则：
+
+```text
+read(
+    scope=...,
+    query=...,
+    source=...,
+    created_after=...,
+    created_before=...,
+    importance_gte=...,
+    ...
+)
+```
+
+会成为 God Method (上帝方法)。
+
+### Lesson 12 核心结构
+
+```text
+MemoryStore
+    │
+    ├── read()
+    ├── write()
+    ├── delete()
+    │
+    └── query()
+          ↑
+          │
+      MemoryQuery
+```
+
+新增 `MemoryQuery`：
+
+> “我希望 Store 根据哪些条件寻找 Memory。”
+
+### Lesson 12 架构
+
+```text
+                 MemoryRuntime
+                       │
+                       │ resolve()
+                       ↓
+                 MemoryScope[]
+                       │
+                       │ scope
+                       ↓
+                  MemoryStore
+                       │
+              ┌────────┴────────┐
+              │                 │
+            read()           query()
+                                │
+                         MemoryQuery
+                                │
+                                ↓
+                           Filtered
+                           Memories
+```

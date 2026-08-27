@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from runtime.context.memory_item import MemoryItem
+from runtime.memory.memory_query import MemoryQuery
 from runtime.memory.memory_scope import MemoryScope
 from runtime.memory.memory_store import MemoryStore
 
@@ -56,3 +59,57 @@ class InMemoryMemoryStore(MemoryStore):
             scope,
             None,
         )
+
+    async def query(
+            self,
+            scope: MemoryScope,
+            query: MemoryQuery,
+    ) -> list[MemoryItem]:
+        memories = self._memories.get(scope, [])
+
+        now = datetime.now(timezone.utc)
+
+        result: list[MemoryItem] = []
+
+        for item in memories:
+            if (
+                query.source is not None
+                and item.source != query.source
+            ):
+                continue
+
+            if (
+                query.min_importance is not None
+                and item.importance < query.min_importance
+            ):
+                continue
+
+            created_at = item.metadata.created_at
+
+            if (
+                query.created_after is not None
+                and created_at <= query.created_after
+            ):
+                continue
+
+            if (
+                query.created_before is not None
+                and created_at >= query.created_before
+            ):
+                continue
+
+            if (
+                not query.include_expired
+                and item.is_expired()
+            ):
+                continue
+
+            result.append(item)
+
+            if (
+                query.limit is not None
+                and len(result) >= query.limit
+            ):
+                break
+
+        return result
