@@ -5,6 +5,7 @@ from runtime.context.memory_item import MemoryItem
 from runtime.context.runtime_context import RuntimeContext
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_operation import MemoryOperation
+from runtime.memory.memory_query import MemoryQuery
 from runtime.memory.memory_retriever import MemoryRetriever, DefaultMemoryRetriever
 from runtime.memory.memory_scope import MemoryScope
 from runtime.memory.memory_scope_resolver import MemoryScopeResolver
@@ -26,6 +27,22 @@ class MemoryRuntime(RuntimeComponent):
     - Memory mutation delegation
 
     MemoryRuntime does not implement persistence itself.
+
+    Retrieval pipeline:
+
+        MemoryQuery
+            ↓
+        MemoryStore.query()
+            ↓
+        Candidate Memories
+            ↓
+        MemoryRetriever
+            ↓
+        Candidate Retrieval
+            ↓
+        Ranking
+            ↓
+        Final Top-K
     """
 
     def __init__(
@@ -160,13 +177,36 @@ class MemoryRuntime(RuntimeComponent):
         query: str,
         runtime_context: RuntimeContext,
         limit: int = 10,
+        memory_query: MemoryQuery | None = None,
     ) -> list[MemoryItem]:
         """
-        Query Memory across all resolved scopes.
+        Retrieve Memory across all resolved scopes.
 
-        Scope priority is preserved.
+        The retrieval pipeline is:
 
-        The global result count never exceeds `limit`.
+            MemoryQuery
+                ↓
+            MemoryStore.query()
+                ↓
+            Candidate Memories
+                ↓
+            MemoryRetriever
+                ↓
+            Ranking
+                ↓
+            Final Top-K
+
+        `memory_query` contains storage-level filtering
+        constraints.
+
+        `query` contains the retrieval text used by the
+        MemoryRetriever.
+
+        The final `limit` is applied by the MemoryRetriever
+        after candidate retrieval and ranking.
+
+        Scope ordering is preserved when candidate memories
+        are collected from multiple scopes.
         """
         self._check_access(MemoryOperation.READ)
 
@@ -176,9 +216,29 @@ class MemoryRuntime(RuntimeComponent):
         scopes = self._resolve_scopes()
         memories: list[MemoryItem] = []
 
+        # Each scope contributes a candidate pool.
+        #
+        # The final result limit is applied only after
+        # candidates from all scopes have been combined
+        # and passed through the Retrieval pipeline.
+        candidate_limit = max(limit * 10, limit)
+        store_query = memory_query
+        if (
+                store_query is not None
+                and store_query.limit is not None
+        ):
+            store_query = store_query.model_copy(
+                update={
+                    'limit': candidate_limit
+                }
+            )
+
+        if store_query is None:
+            store_query = MemoryQuery()
+
         for scope in scopes:
             operation = RuntimeOperation(
-                name="memory.read",
+                name="memory.query",
                 component="memory_runtime",
                 metadata={
                     "scope_type": scope.type.value,
@@ -189,13 +249,79 @@ class MemoryRuntime(RuntimeComponent):
             result = await self.invoke(
                 operation,
                 runtime_context,
-                self._store.read,
+                self._store.query,
                 scope,
+                store_query,
             )
 
             memories.extend(result)
 
         return self._retriever.retrieve(memories, query, limit)
+
+    async def query_scope(
+            self,
+            scope: MemoryScope,
+            query: str,
+            runtime_context: RuntimeContext,
+            limit: int = 10,
+            memory_query: MemoryQuery | None = None,
+    ) -> list[MemoryItem]:
+        """
+        Query Memory within one explicitly selected scope.
+
+        The requested scope must belong to the set of scopes
+        resolved by this MemoryRuntime.
+
+        This keeps explicit single-scope retrieval inside the
+        Runtime's existing scope boundary.
+
+        ``memory_query`` is applied by MemoryStore.
+
+        ``limit`` is the final Retrieval result limit and is
+        applied by MemoryRetriever.
+        """
+        self._check_access(
+            MemoryOperation.READ
+        )
+
+        if limit <= 0:
+            return []
+
+        scopes = self._resolve_scopes()
+
+        if scope not in scopes:
+            raise PermissionError(
+                "The requested memory scope is not accessible "
+                "through this MemoryRuntime."
+            )
+
+        store_query = (
+            memory_query
+            or MemoryQuery()
+        )
+
+        operation = RuntimeOperation(
+            name="memory.query",
+            component="memory_runtime",
+            metadata={
+                "scope_type": scope.type.value,
+                "scope_id": scope.id,
+            },
+        )
+
+        memories = await self.invoke(
+            operation,
+            runtime_context,
+            self._store.query,
+            scope,
+            store_query,
+        )
+
+        return self._retriever.retrieve(
+            memories,
+            query,
+            limit,
+        )
 
     async def forget(
         self,

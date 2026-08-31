@@ -742,3 +742,224 @@ MemoryStore
                            Filtered
                            Memories
 ```
+
+
+## Lesson 13：把 Candidate Retrieval 真正接入 MemoryStore
+
+要解决的问题：
+
+> 当 Agent 真正提出一个“记忆检索请求”时，Memory Runtime 如何把 Query、Candidate Retrieval 
+> 
+> 和 Ranking 组织成一个完整的 Retrieval Pipeline？
+
+从`Storage Query` 向 `Memory Retrieval` 演进。
+
+### 问题分析
+
+Lesson 12中引入`MemoryQuery` 解决的是：
+
+> 哪些Memory 可以进入候选集？
+
+但是Agent的真实需求通常不是： `“给我 source=reflection 且 importance>=0.7 的 Memory。”`
+
+而是： `“帮我找和 NVIDIA 风险分析相关的、比较重要的历史记忆。”`
+
+所以，存在以下3层：
+
+**第一层：Filtering**
+
+`MemoryQuery` 回答：
+
+> 哪些 Memory 满足结构化约束？
+
+**第二层：Retrieval**
+
+`query = "NVIDIA risk analysis"` 回答：
+
+> 哪些 Memory 与当前查询最相关？
+
+然后才是：
+
+**第三层：Ranking**
+
+`MemoryRanker` 回答：
+
+> 在候选结果中，哪些应该排在前面？
+
+### 当前代码分析
+
+Lesson 12加入的`MemoryQuery`使得Store能够进行结构化查询。
+
+```python
+MemoryQuery(
+    source=...,
+    min_importance=...,
+    created_after=...,
+    created_before=...,
+    include_expired=...,
+    limit=...,
+)
+```
+
+Lesson 10/11 实现的`Retriever`能够：
+
+```text
+Candidate Retrieval
+        ↓
+Ranking
+        ↓
+Top-K
+```
+
+但是两者没有结合。
+
+### Lesson 13 的职责边界
+
+建立以下边界： `MemoryStore -> 结构化过滤`，例如：
+
+```text
+source
+importance
+created_at
+expiration
+```
+
+而： `MemoryCandidateRetriever -> 内容相关性召回`， 例如： “NVIDIA”。
+
+然后： `MemoryRanker -> 排序`， 例如：
+
+```text
+importance
+recency
+hybrid score
+```
+
+完整职责：
+
+```text
+  MemoryRuntime
+        │
+        ↓
+  MemoryStore
+        │
+ Structured Filter
+        │
+        ↓
+ Candidate Retriever
+        │
+  Semantic / Keyword
+        │
+        ↓
+    Ranker
+        │
+        ↓
+      Top-K
+```
+
+### 代码修改
+
+#### 修改 MemoryRuntime
+
+当前实际代码：
+
+```python
+async def query(
+    self,
+    query: str,
+    runtime_context: RuntimeContext,
+    limit: int = 10,
+)
+```
+
+我们保留这个 API，同时增加：
+
+`memory_query: MemoryQuery | None = None`
+
+最终：
+
+```python
+async def query(
+    self,
+    query: str,
+    runtime_context: RuntimeContext,
+    limit: int = 10,
+    memory_query: MemoryQuery | None = None,
+)
+```
+这样不会破坏现有代码。
+
+调用方式：
+
+```python
+await runtime.query(
+    "NVIDIA",
+    context,
+)
+```
+
+仍然有效。
+
+而新的调用：
+```python
+await runtime.query(
+    "NVIDIA",
+    context,
+    memory_query=MemoryQuery(
+        min_importance=0.7,
+    ),
+)
+```
+就可以表达：
+
+> 找与 NVIDIA 相关，并且 importance >= 0.7 的 Memory。
+
+本课先统一规则：
+
+> 跨 Scope Retrieval 时，Store Query 不执行最终 limit；最终 limit 由 Retriever 在全局候选集上执行。
+
+**不能直接删除 `MemoryQuery.limit`** 因为他对于single-scope Store query 仍然有意义：
+
+```text
+MemoryStore.query()
+    ↓
+单 Scope 查询
+    ↓
+可以使用 limit
+
+
+MemoryRuntime.query()
+    ↓
+多 Scope Retrieval
+    ↓
+暂时关闭 Store-level limit
+    ↓
+全局 Retriever limit
+```
+
+#### 最终架构
+
+```text
+                         MemoryRuntime
+                              │
+                 ┌────────────┴────────────┐
+                 │                         │
+              query()                query_scope()
+                 │                         │
+          ScopeResolver              Explicit Scope
+                 │                         │
+          Multiple Scopes            One Scope
+                 │                         │
+                 └────────────┬────────────┘
+                              ↓
+                       MemoryStore.query()
+                              ↓
+                       Structured Filter
+                              ↓
+                         Candidates
+                              ↓
+                    MemoryCandidateRetriever
+                              ↓
+                           Ranker
+                              ↓
+                            Top-K
+```
