@@ -67,8 +67,6 @@ class InMemoryMemoryStore(MemoryStore):
     ) -> list[MemoryItem]:
         memories = self._memories.get(scope, [])
 
-        now = datetime.now(timezone.utc)
-
         result: list[MemoryItem] = []
 
         for item in memories:

@@ -52,6 +52,7 @@ class MemoryStore(ABC):
         """Delete all memory items belonging to an Agent."""
         raise NotImplementedError
 
+    @abstractmethod
     async def query(
             self,
             scope: MemoryScope,
