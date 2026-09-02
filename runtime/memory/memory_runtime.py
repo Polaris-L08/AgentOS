@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from runtime.component import RuntimeComponent
-from runtime.context.memory_item import MemoryItem
+from runtime.context import MemoryMetadata
+from runtime.context.memory_item import MemoryItem, MemorySource
 from runtime.context.runtime_context import RuntimeContext
 from runtime.memory.memory_access_policy import MemoryAccessPolicy
 from runtime.memory.memory_operation import MemoryOperation
@@ -106,6 +107,40 @@ class MemoryRuntime(RuntimeComponent):
                 f"'{operation.value}' "
                 f"is not allowed."
             )
+
+    async def remember(
+            self,
+            content: str,
+            runtime_context: RuntimeContext,
+            *,
+            importance: float = 1.0,
+            source: MemorySource = MemorySource.HISTORY,
+            metadata: MemoryMetadata | None = None,
+    ) -> MemoryItem:
+        """
+        Create a MemoryItem and persist it through the normal write boundary.
+
+        ``remember()`` is a convenience boundary for Agent-facing code.
+        It does not perform persistence, scope resolution, or access control
+        itself; those responsibilities remain in ``write()``.
+        """
+        item = MemoryItem(
+            content=content,
+            importance=importance,
+            source=source,
+            metadata=(
+                metadata
+                if metadata is not None
+                else MemoryMetadata()
+            ),
+        )
+
+        await self.write(
+            item,
+            runtime_context,
+        )
+
+        return item
 
     async def write(
         self,

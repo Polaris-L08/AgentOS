@@ -963,3 +963,93 @@ MemoryRuntime.query()
                               ↓
                             Top-K
 ```
+
+
+## Lesson 14: Memory Write Semantics：从“存进去”到“为什么应该存”
+
+本节目标：
+
+> 建立 Memory Write Boundary
+
+明确区分：
+
+```text
+Memory Creation
+        ↓
+Memory Runtime
+        ↓
+Memory Store
+```
+
+避免让Agent/Workflow 直接操作Store。
+
+### write() 和 remember() 的职责
+
+ - `write()`: 接受已经构造好的MemoryItem，保存在Store中。
+ - `remember()`：负责构造MemoryItem。
+
+更准确的说法：
+
+> Agent 决定把某个信息作为长期记忆保存。
+
+但是不负责决定是否应该记住，这个决策由Reflection / Memory Policy 完成。
+
+### 未来架构
+
+```text
+Agent / Reflection
+        │
+        │ candidate information
+        ↓
+Memory Policy
+        │
+        │ should remember?
+        ↓
+MemoryRuntime.remember()
+        │
+        ↓
+MemoryItem
+        │
+        ↓
+MemoryRuntime.write()
+        │
+        ↓
+MemoryStore
+```
+
+### 当前 Memory System 结构
+
+```text
+                    Agent
+                      │
+                      ▼
+               ┌──────────────┐
+               │ MemoryRuntime│
+               └──────────────┘
+                  │    │
+        ┌─────────┘    └──────────────┐
+        ▼                             ▼
+ Access Policy                  Scope Resolver
+                                      │
+                         ┌────────────┴────────────┐
+                         ▼                         ▼
+                    Primary Scope            Other Scopes
+                         │                         │
+                         ▼                         ▼
+                       Write                    Read/Query
+                         │
+                         ▼
+                  ┌─────────────┐
+                  │ MemoryStore │
+                  └─────────────┘
+                         │
+                         ▼
+                 Candidate Retrieval
+                         │
+                         ▼
+                       Ranker
+                         │
+                         ▼
+                    Final Memory
+```
+
