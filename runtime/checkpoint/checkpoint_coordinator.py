@@ -92,6 +92,8 @@ class CheckpointCoordinator:
             context = AgentExecutionContext(
                 runtime_context=runtime_context,
                 agent_identity=agent.identity,
+                agent_context=agent.context,
+                memory=agent.memory,
                 state=deepcopy(agent_checkpoint.state),
                 loop=deepcopy(agent_checkpoint.loop),
             )

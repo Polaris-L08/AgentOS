@@ -10,6 +10,7 @@ from runtime.loop.loop_state import LoopState
 
 if TYPE_CHECKING:
     from agents.base_agent import BaseAgent
+    from runtime.memory.memory_runtime import MemoryRuntime
 
 
 @dataclass(slots=True)
@@ -29,14 +30,19 @@ class AgentExecutionContext:
                    |
                    +---- one invocation
                    |
-                   +---- LoopState
+                   +---- execution-local state
+                   +---- MemoryRuntime reference
 
     RuntimeContext is shared by all Agents participating
     in the same Runtime execution.
 
-    AgentContext belongs to the Agent instance.
+    AgentContext and MemoryRuntime belong to the Agent instance.
+    AgentExecutionContext provides access to them for one invocation
+    without copying or owning their long-lived state.
 
-    AgentExecutionContext belongs to one invocation.
+    Memory itself is NOT stored inside AgentExecutionContext.
+    The ``memory`` field is only a reference to the Agent-owned
+    MemoryRuntime.
     """
 
     runtime_context: RuntimeContext
@@ -44,6 +50,8 @@ class AgentExecutionContext:
     agent_identity: AgentIdentity
 
     agent_context: AgentContext
+
+    memory: "MemoryRuntime"
 
     # Deprecated
     state: ContextState
@@ -60,7 +68,7 @@ class AgentExecutionContext:
         Create isolated execution context for one Agent invocation.
         """
 
-        return cls(runtime_context, agent.identity, agent.context, ContextState(), LoopState())
+        return cls(runtime_context, agent.identity, agent.context, agent.memory, ContextState(), LoopState())
 
     @classmethod
     def restore(cls, runtime_context: RuntimeContext, agent: "BaseAgent",
@@ -72,4 +80,4 @@ class AgentExecutionContext:
         rather than restored from the checkpoint.
         """
 
-        return cls(runtime_context, agent.identity, agent.context, checkpoint.state, checkpoint.loop)
+        return cls(runtime_context, agent.identity, agent.context, agent.memory, checkpoint.state, checkpoint.loop)
