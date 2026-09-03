@@ -347,3 +347,64 @@ Application
 Execution
     └── RuntimeContext
 ```
+
+
+## Lesson 3: Application Lifecycle
+
+### Application Lifecycle的第一版定义
+
+```text
+ApplicationState
+
+CREATED
+INITIALIZED
+RUNNING
+STOPPING
+STOPPED
+```
+
+**CREATE**: Application对象已经创建，但是Application尚未完成初始化。
+
+**INITIALIZED**： Application 已经完成初始化，可以准备运行。不代表已经接受 User Request。
+
+**RUNNING**： Application 正式进入运行状态。
+
+**STOPPING**： Application 正在关闭。因为真实系统中 `stop()` 通常不是瞬间完成的。
+
+**STOPPED**: Application 已经停止。
+
+### 完整状态图
+
+```text
+                    ┌──────────────┐
+                    │   CREATED    │
+                    └──────┬───────┘
+                           │
+                      initialize()
+                           │
+                           ▼
+                  ┌────────────────┐
+                  │  INITIALIZED   │
+                  └───────┬────────┘
+                          │
+                       start()
+                          │
+                          ▼
+                  ┌────────────────┐
+                  │    RUNNING     │
+                  └───────┬────────┘
+                          │
+                       stop()
+                          │
+                          ▼
+                  ┌────────────────┐
+                  │    STOPPING    │
+                  └───────┬────────┘
+                          │
+                    shutdown done
+                          │
+                          ▼
+                  ┌────────────────┐
+                  │    STOPPED     │
+                  └────────────────┘
+```
