@@ -1,5 +1,51 @@
 # Phase 12: Application Runtime
 
+课程路线
+
+```text
+Lesson 1
+Application / Session / Execution / Agent Invocation 生命周期模型
+
+Lesson 2
+Application Model & Ownership
+
+Lesson 3
+Application Lifecycle
+
+Lesson 4
+Application Assembly / Component Registry
+
+Lesson 5
+Session Runtime
+
+Lesson 6
+Execution Creation & Execution Handle
+
+Lesson 7
+Application → AgentRuntime Integration
+
+Lesson 8
+Application-level Event / Middleware Integration
+
+Lesson 9
+Application Configuration
+
+Lesson 10
+Application Execution API
+
+Lesson 11
+Application Error / Cancellation / Shutdown
+
+Lesson 12
+Application + Checkpoint / Recovery
+
+Lesson 13
+Application Integration Tests
+
+Lesson 14
+Phase12 Final Integration & Acceptance
+```
+
 ## Lesson 1: Application/Session/Execution/Agent Invocation 生命周期模型
 
 ### 回顾Phase11的最终边界
@@ -241,3 +287,63 @@ Application
                          └── uses ──► Agent Instance
 ```
 
+
+## Lesson 2: Application Model & Ownership
+
+本节建立一个非常小的模型：
+
+```text
+AgentApplication
+    │
+    ├── application_id
+    ├── name
+    │
+    └── agents
+          │
+          ├── agent_id → Agent Instance
+          ├── agent_id → Agent Instance
+          └── ...
+```
+
+现在暂时不加入：
+
+```text
+Session
+Workflow
+Tool
+Memory
+EventBus
+Middleware
+```
+
+### Ownership
+
+Application持有：`AgentRuntime、ExecutionRuntime、Agent instances`
+
+```text
+Application
+    │
+    ├── AgentRuntime
+    │
+    ├── ExecutionRuntime
+    │
+    └── Agents
+```
+
+但是Application**不拥有RuntimeContext**。 因为RuntimeContext是一次Execution的对象。
+
+所以：
+
+```text
+Application
+    ├── AgentRuntime
+    ├── ExecutionRuntime
+    └── Agent
+          │
+          ├── AgentContext
+          └── MemoryRuntime
+
+
+Execution
+    └── RuntimeContext
+```
