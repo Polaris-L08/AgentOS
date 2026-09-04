@@ -809,3 +809,115 @@ AgentExecutionContext
 AgentContext 是 **Agent Instance 的长期上下文**。
 
 Memory 是 **信息存储与检索能力**。
+
+
+## Lesson 6: Execution Creation & Execution Handle
+
+> 一次 Execution 没有一个明确的生命周期对象。
+
+`RuntimeContext`是上下文（Context），不是生命周期控制器（Lifecycle Controller）。
+
+引入 `ExecutionHandle`。
+
+> Application 如何创建一次 Execution，以及如何明确管理这次 Execution 的生命周期。
+
+### Lesson 6 完成后的结构
+
+目标：
+
+```text
+ExecutionRuntime
+      │
+      │ create_execution()
+      ▼
+ExecutionHandle
+      │
+      ├── execution_id
+      ├── runtime_context
+      ├── closed
+      │
+      └── close()
+```
+
+`RuntimeContext`是Execution的运行时上下文。
+
+`ExecutionHandle`时 对这次Execution生命周期的控制句柄。
+
+因此：
+
+```text
+ExecutionHandle
+      │
+      └── owns lifecycle
+              │
+              └── RuntimeContext
+```
+
+而不是让 `RuntimeContext`自己承担生命周期管理。
+
+### 重新理解ExecutionRuntime
+
+在Lesson 6之后 ExecutionRuntime不再只是 RuntimeContext Factory，
+
+而是： **Execution Lifecycle Service**。
+
+职责：
+
+```text
+create_execution()
+        ↓
+创建 Execution
+
+create_context()
+        ↓
+底层 Context 创建
+
+close()
+        ↓
+Execution Finalization
+```
+
+### 核心结论
+
+> RuntimeContext 描述 Execution，而 ExecutionHandle 管理 Execution。
+
+```text
+ExecutionRuntime
+    = 创建/结束 Execution 的服务
+
+ExecutionHandle
+    = 一次具体 Execution 的生命周期句柄
+
+RuntimeContext
+    = 一次具体 Execution 的运行时上下文
+```
+
+三者关系：
+
+```text
+ExecutionRuntime
+       │
+       │ create
+       ▼
+ExecutionHandle
+       │
+       │ exposes
+       ▼
+RuntimeContext
+```
+
+完整生命周期：
+
+```text
+Application
+    │
+    └── Session
+          │
+          └── ExecutionHandle
+                 │
+                 └── RuntimeContext
+                        │
+                        └── AgentExecutionContext
+                               │
+                               └── Agent
+```
