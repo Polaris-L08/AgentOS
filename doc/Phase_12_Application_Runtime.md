@@ -408,3 +408,209 @@ STOPPED
                   │    STOPPED     │
                   └────────────────┘
 ```
+
+
+## Lesson 4: Application Assembly / Component Registry
+
+本节目标：
+
+> 防止AgentApplication变成God Object，引入 Application Assembly。
+> 
+> 把“创建和组装组件” 与 “Application使用这些组件运行” 分开。
+
+形成：
+
+```text
+Application Assembly
+        │
+        │ creates / registers
+        ↓
+Component Registry
+        │
+        │ provides
+        ↓
+AgentApplication
+        │
+        ↓
+Runtime Execution
+```
+
+```text
+             ApplicationAssembly
+                     │
+             ┌───────┴───────┐
+             ↓               ↓
+      ComponentRegistry   Agent instances
+             │               │
+             └───────┬───────┘
+                     ↓
+              AgentApplication
+```
+
+### 概念区分
+
+##### **Component** —— Runtime能力组件
+
+Component是 AgentOS Runtime中长期存在的能力组件。例如：
+
+```text
+AgentRuntime
+ExecutionRuntime
+WorkflowRuntime
+ToolExecutor
+EventBus
+CheckpointCoordinator
+MemoryRuntime
+```
+
+解决的是：“系统具备什么运行能力？” 例如：
+
+```text
+AgentRuntime
+    → 如何执行 Agent
+
+ExecutionRuntime
+    → 如何创建和管理一次 Execution
+
+EventBus
+    → 如何发布事件
+
+MemoryRuntime
+    → 如何访问 Memory
+
+ToolExecutor
+    → 如何执行 Tool
+
+CheckpointStore
+    → 如何保存 / 恢复 Checkpoint
+```
+
+##### **Agent** —— Application的能力实例
+
+Agent解决的是：“这个应用具有什么智能能力？”，例如：
+
+```text
+Research Application：
+ResearchAgent
+SupervisorAgent
+
+投资助手：
+InvestmentResearchAgent
+RiskAnalysisAgent
+PortfolioAgent
+```
+
+##### **Application** —— 一个完整的Agent应用
+
+Application解决的是： “我要把哪些 Agent 和哪些 Runtime 能力组合成一个可以运行的应用？”，例如：
+
+```text
+Research Application
+│
+├── SupervisorAgent
+├── ResearchAgent
+│
+├── AgentRuntime
+├── ExecutionRuntime
+├── EventBus
+├── Middleware
+├── Checkpoint
+└── ...
+```
+
+Application不是一个具体能力，是一个：**Composition + Ownership + Lifecycle Boundary**
+
+```text
+Application
+    │
+    ├── owns Agents
+    ├── owns / references Runtime Components
+    └── owns Application Lifecycle
+```
+
+### 目标架构
+
+```text
+                 Application Assembly
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+          ▼                             ▼
+     Components                      Agents
+          │                             │
+          │                             │
+    ┌─────┴──────┐              ┌───────┴──────┐
+    ▼            ▼              ▼              ▼
+AgentRuntime ExecutionRuntime SupervisorAgent ResearchAgent
+          │                             │
+          └──────────────┬──────────────┘
+                         ▼
+                  AgentApplication
+```
+
+```text
+component_registry.py
+    ↓
+管理 Application Components
+
+application_assembly.py
+    ↓
+负责组装 Application
+
+application.py
+    ↓
+运行时 Application Boundary
+```
+
+### Lesson 4 最终结论
+
+#### 架构图
+
+```text
+                    ┌─────────────────────────┐
+                    │   ApplicationAssembly    │
+                    │                         │
+                    │  composition root       │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+                    ▼                         ▼
+          ComponentRegistry             Agent Instances
+                    │                         │
+          ┌─────────┴─────────┐              │
+          │                   │              │
+          ▼                   ▼              │
+    AgentRuntime      ExecutionRuntime       │
+          │                   │              │
+          └─────────┬─────────┘              │
+                    ▼                        ▼
+             ┌──────────────────────────────────┐
+             │          AgentApplication         │
+             │                                  │
+             │  Application Identity             │
+             │  Agent Ownership                  │
+             │  Runtime Services                 │
+             │  Application Lifecycle             │
+             └──────────────────────────────────┘
+```
+
+**Assembly** 负责： 
+
+> Composition（组装）
+
+**Registry** 负责：
+
+> Lookup / Ownership of references（组件引用管理）
+
+**Application** 负责：
+
+> Application Boundary + Lifecycle（应用边界与生命周期）
+
+**Runtime** 负责：
+
+> Execution（执行）
+
+**Agent** 负责：
+
+> Agent Capability / Behavior（Agent 能力与行为）
