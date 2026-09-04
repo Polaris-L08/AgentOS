@@ -614,3 +614,55 @@ application.py
 **Agent** 负责：
 
 > Agent Capability / Behavior（Agent 能力与行为）
+
+
+## Lesson 5: Application Execution API
+
+目标回答：
+
+> 一个已经启动的 AgentApplication，如何接收一个 TaskRequest，
+> 执行一次完整的 AgentOS Execution，并返回 TaskResult？
+
+### 架构图
+
+```text
+                       Application
+                            │
+                 ┌──────────┴──────────┐
+                 │                     │
+                 ▼                     ▼
+            Application           Application
+             Lifecycle              Assembly
+                 │                     │
+                 │                     ▼
+                 │             ComponentRegistry
+                 │
+                 ▼
+              execute()
+                 │
+                 ▼
+          ┌───────────────┐
+          │ TaskRequest   │
+          └───────┬───────┘
+                  │
+                  ▼
+          ExecutionRuntime
+                  │
+                  ▼
+           RuntimeContext
+                  │
+                  ▼
+            AgentRuntime
+                  │
+                  ▼
+             AgentRuntime
+                  │
+                  ▼
+                Agent
+                  │
+                  ▼
+            AgentResult
+                  │
+                  ▼
+             TaskResult
+```

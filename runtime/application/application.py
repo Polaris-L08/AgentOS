@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from agents.base_agent import BaseAgent
+from models.task_request import TaskRequest
+from models.task_result import TaskResult
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
 from runtime.execution import AgentRuntime
 from runtime.execution.execution_runtime import ExecutionRuntime
@@ -129,6 +131,57 @@ class AgentApplication:
             raise
         else:
             self._state = ApplicationState.STOPPED
+
+    async def execute(
+            self,
+            task: TaskRequest,
+            agent_id: str,
+    ) -> TaskResult:
+        """
+        Execute one TaskRequest through an Agent.
+
+        Application is responsible for the execution boundary.
+
+        AgentRuntime is responsible for Agent invocation.
+
+        Flow:
+
+            TaskRequest
+                ↓
+            RuntimeContext
+                ↓
+            AgentRuntime
+                ↓
+            Agent
+                ↓
+            AgentResult
+                ↓
+            TaskResult
+
+        RuntimeContext is created for this execution only.
+        """
+        self._require_state(ApplicationState.RUNNING)
+
+        agent = self.get_agent(agent_id)
+
+        runtime_context = self.execution_runtime.create_context()
+
+        try:
+            agent_result = await self.agent_runtime.execute(
+                agent=agent,
+                task=task,
+                runtime_context=runtime_context,
+            )
+            return TaskResult(
+                success=agent_result.success,
+                answer=str(agent_result.output),
+                metadata={
+                    "agent_id": agent.identity.agent_id,
+                    "agent_type": agent.identity.agent_type,
+                },
+            )
+        finally:
+            await self.execution_runtime.close(runtime_context)
 
     async def _shutdown_components(self) -> None:
         """
