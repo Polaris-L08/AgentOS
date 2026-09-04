@@ -6,6 +6,7 @@ from models.task_result import TaskResult
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
 from runtime.execution import AgentRuntime
 from runtime.execution.execution_runtime import ExecutionRuntime
+from runtime.session import SessionManager, Session
 
 
 class AgentApplication:
@@ -42,11 +43,14 @@ class AgentApplication:
             agent_runtime: AgentRuntime,
             execution_runtime: ExecutionRuntime,
             agents: list[BaseAgent] | None = None,
+            session_manager: SessionManager | None = None,
     ) -> None:
         self.application_id = application_id
         self.name = name
         self.agent_runtime = agent_runtime
         self.execution_runtime = execution_runtime
+
+        self.session_manager = session_manager or SessionManager()
 
         self._agents: dict[str, BaseAgent] = {}
 
@@ -251,6 +255,59 @@ class AgentApplication:
         """
 
         return agent_id in self._agents
+
+    # ------------------------------------------------------------------
+    # Session
+    # ------------------------------------------------------------------
+    def create_session(self, metadata: dict | None = None) -> Session:
+        """
+        Create a new Session owned by this Application.
+
+        Sessions can only be created while the Application is running.
+        """
+
+        self._require_state(ApplicationState.RUNNING)
+
+        return self.session_manager.create_session(
+            metadata=metadata
+        )
+
+    def get_session(self, session_id: str) -> Session:
+        """
+        Return a Session owned by this Application.
+
+        Sessions are only accessible while the Application is running.
+        """
+
+        self._require_state(ApplicationState.RUNNING)
+
+        return self.session_manager.get_session(
+            session_id
+        )
+
+    def has_session(self, session_id: str) -> bool:
+        """
+        Return whether the Application owns the given Session.
+
+        This method is intentionally lifecycle-aware.
+        """
+
+        self._require_state(ApplicationState.RUNNING)
+
+        return self.session_manager.has_session(
+            session_id
+        )
+
+    def delete_session(self, session_id: str) -> None:
+        """
+        Delete a Session owned by this Application.
+        """
+
+        self._require_state(ApplicationState.RUNNING)
+
+        self.session_manager.delete_session(
+            session_id
+        )
 
     # ------------------------------------------------------------------
     # Internal lifecycle validation

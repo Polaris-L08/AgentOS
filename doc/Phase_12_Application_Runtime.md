@@ -616,53 +616,196 @@ application.py
 > Agent Capability / Behavior（Agent 能力与行为）
 
 
-## Lesson 5: Application Execution API
+## Lesson 5: Session Runtime —— 建立Session生命周期与 Application 的 Session Ownership
 
-目标回答：
+> Application如何创建、持有和管理Session。
 
-> 一个已经启动的 AgentApplication，如何接收一个 TaskRequest，
-> 执行一次完整的 AgentOS Execution，并返回 TaskResult？
-
-### 架构图
+建立：
 
 ```text
-                       Application
-                            │
-                 ┌──────────┴──────────┐
-                 │                     │
-                 ▼                     ▼
-            Application           Application
-             Lifecycle              Assembly
-                 │                     │
-                 │                     ▼
-                 │             ComponentRegistry
-                 │
-                 ▼
-              execute()
-                 │
-                 ▼
-          ┌───────────────┐
-          │ TaskRequest   │
-          └───────┬───────┘
-                  │
-                  ▼
-          ExecutionRuntime
-                  │
-                  ▼
-           RuntimeContext
-                  │
-                  ▼
-            AgentRuntime
-                  │
-                  ▼
-             AgentRuntime
-                  │
-                  ▼
-                Agent
-                  │
-                  ▼
-            AgentResult
-                  │
-                  ▼
-             TaskResult
+AgentApplication
+       │
+       │ owns
+       ▼
+SessionManager
+       │
+       ├── Session A
+       ├── Session B
+       └── Session C
 ```
+
+建立生命周期关系：
+
+```text
+Application Lifetime
+       │
+       └── Session Lifetime
+                │
+                └── Execution Lifetime
+                         │
+                         └── Agent Invocation Lifetime
+```
+
+### Session 与现有Context的区分
+
+#### AgentApplication
+
+Application 生命周期：
+
+```text
+CREATED
+   ↓
+INITIALIZED
+   ↓
+RUNNING
+   ↓
+STOPPING
+   ↓
+STOPPED
+```
+
+#### Session
+
+一个持续的用户交互会话： Session A
+
+生命周期比一次 Execution 长。
+
+#### RuntimeContext
+
+一次 Execution 的运行时上下文：
+
+```text
+Execution #1
+    └── RuntimeContext #1
+```
+
+#### AgentExecutionContext
+
+一次 Agent Invocation 的上下文：
+
+```text
+Execution #1
+    ├── ResearchAgent
+    │     └── AgentExecutionContext #1
+    │
+    └── RiskAgent
+          └── AgentExecutionContext #2
+```
+
+#### AgentContext
+
+属于一个长期存在的 Agent Instance：
+
+```text
+ResearchAgent instance
+       │
+       └── AgentContext
+```
+
+#### Memory
+
+Memory 是信息持久化/检索能力，不是 Session 本身。
+
+### Lesson 5的最终关系
+
+```text
+AgentApplication
+│
+├── Agents
+│
+├── Runtime Components
+│
+└── SessionManager
+       │
+       ├── Session A
+       │      │
+       │      ├── Execution A1
+       │      ├── Execution A2
+       │      └── Execution A3
+       │
+       └── Session B
+              │
+              ├── Execution B1
+              └── Execution B2
+```
+
+> `SessionManager` 不持有 `RuntimeContext`。
+
+> `Session` 不持有 `RuntimeContext`。
+
+> `Session` 也不直接持有 `AgentContext`。
+
+这几个边界必须保持干净。
+
+### Lesson 5完成后的架构
+
+```text
+                         AgentApplication
+                                │
+             ┌──────────────────┼──────────────────┐
+             │                  │                  │
+        Application         Agent Ownership   Runtime Services
+        Lifecycle                │                  │
+             │                   │                  │
+             │              BaseAgent         AgentRuntime
+             │                   │            ExecutionRuntime
+             │                   │
+             │              AgentContext
+             │                   │
+             │              MemoryRuntime
+             │
+             └────────── SessionManager
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+                 Session A           Session B
+                    │
+              (future executions)
+```
+
+生命周期层次：
+
+```text
+Application Lifetime
+        │
+        └── Session Lifetime
+                │
+                └── Execution Lifetime
+                        │
+                        └── Agent Invocation Lifetime
+```
+
+对象对应：
+
+```text
+Application
+    ↓
+AgentApplication
+
+Session
+    ↓
+Session
+
+Execution
+    ↓
+RuntimeContext        ← 当前已有
+                      ← Lesson 6 将完善其生命周期管理
+
+Agent Invocation
+    ↓
+AgentExecutionContext
+```
+
+### 重要结论
+
+> Application 管应用，
+> 
+> Session 管会话边界，
+> 
+> Execution 管一次执行，
+> 
+> AgentExecutionContext 管一次 Agent 调用。
+
+AgentContext 是 **Agent Instance 的长期上下文**。
+
+Memory 是 **信息存储与检索能力**。
