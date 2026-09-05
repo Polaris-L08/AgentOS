@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from agents import AgentResult
 from agents.base_agent import BaseAgent
 from models.task_request import TaskRequest
 from models.task_result import TaskResult
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
-from runtime.execution import AgentRuntime
+from runtime.execution import AgentRuntime, ExecutionHandle
 from runtime.execution.execution_runtime import ExecutionRuntime
 from runtime.session import SessionManager, Session
 
@@ -307,6 +308,38 @@ class AgentApplication:
 
         self.session_manager.delete_session(
             session_id
+        )
+
+    async def invoke_agent(
+            self,
+            agent_id: str,
+            task: TaskRequest,
+            execution_handle: ExecutionHandle,
+    ) -> AgentResult:
+        """
+        Invoke an Agent through the Application-owned AgentRuntime.
+
+        This method is intentionally thin.
+
+        Application is responsible for:
+            - validating Application lifecycle
+            - resolving the Agent instance
+            - obtaining the Execution context
+
+        AgentRuntime is responsible for:
+            - creating/validating AgentExecutionContext
+            - middleware
+            - events
+            - invoking the Agent
+        """
+        self._require_state(ApplicationState.RUNNING)
+
+        agent = self.get_agent(agent_id)
+
+        return await self.agent_runtime.execute(
+            agent=agent,
+            task=task,
+            runtime_context=execution_handle.runtime_context
         )
 
     # ------------------------------------------------------------------

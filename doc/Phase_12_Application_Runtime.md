@@ -921,3 +921,78 @@ Application
                                │
                                └── Agent
 ```
+
+
+## Lesson 7: Application -> AgentRuntime Integration
+
+> 建立 Application -> AgentRuntime 的正式集成边界
+
+### 设计原则
+
+当前有三个不同层次：
+
+**Application** 负责：“这个 AgentOS Application 里有哪些运行时组件，以及它们如何协作。”，包括：
+
+```text
+Ownership
+Lifecycle
+Composition
+Runtime Coordination
+```
+
+**ExecutionRuntime** 负责： “创建和结束一次执行。” 包括：
+
+```text
+Execution Creation
+Execution Finalization
+RuntimeContext
+```
+
+**AgentRuntime** 负责： “如何真正运行一个 Agent。” 包括：
+
+```text
+Agent Invocation
+AgentExecutionContext
+Agent Lifecycle Boundary
+Agent Events
+Middleware
+```
+
+正确的方向是：
+
+```text
+Application
+    │
+    │ obtains Agent
+    │
+    ▼
+AgentRuntime
+    │
+    │ execute(agent, task, runtime_context)
+    ▼
+Agent
+```
+
+Application 是**协调者（Coordinator）**， AgentRuntime是**执行者（Executor）**。
+
+### Lesson 7 完成后的架构
+
+```text
+                         AgentApplication
+                                │
+          ┌─────────────────────┼─────────────────────┐
+          │                     │                     │
+          ▼                     ▼                     ▼
+   SessionManager       ExecutionRuntime        AgentRuntime
+          │                     │                     │
+          ▼                     ▼                     │
+       Session          ExecutionHandle             │
+                                │                   │
+                                ▼                   ▼
+                         RuntimeContext          Agent
+                                                    │
+                                                    ▼
+                                         AgentExecutionContext
+```
+
+> Application 管理边界，ExecutionRuntime 管理 Execution，AgentRuntime 管理 Agent Invocation。
