@@ -259,3 +259,44 @@ def test_assembly_is_independent_between_builds():
     assert application1.get_agent("agent-1") is not application2.get_agent(
         "agent-2"
     )
+
+import pytest
+
+from models.task_request import TaskRequest
+
+
+@pytest.mark.asyncio
+async def test_assembled_application_can_invoke_agent():
+    agent_runtime, execution_runtime, _ = create_runtime_components()
+
+    agent = create_agent("agent-1")
+
+    application = (
+        ApplicationAssembly(create_config())
+        .register_component("agent_runtime", agent_runtime)
+        .register_component("execution_runtime", execution_runtime)
+        .add_agent(agent)
+        .build()
+    )
+
+    await application.initialize()
+    await application.start()
+
+    execution_handle = execution_runtime.create_execution()
+
+    task = TaskRequest(
+        task_id="task-1",
+        user_input="hello",
+    )
+
+    result = await application.invoke_agent(
+        agent_id="agent-1",
+        task=task,
+        execution_handle=execution_handle,
+    )
+
+    assert result.success is True
+    assert result.output == "completed: hello"
+
+    await execution_handle.close()
+    await application.stop()

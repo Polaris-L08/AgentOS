@@ -1086,3 +1086,31 @@ Configuration
 Application 自己创建一切
 ```
 
+### 完成后的架构
+
+```text
+                  ApplicationConfig
+                         │
+                         ▼
+                ApplicationAssembly
+                         │
+          ┌──────────────┼───────────────┐
+          │              │               │
+          ▼              ▼               ▼
+    AgentRuntime   ExecutionRuntime   EventBus
+          │                              │
+          │                              │
+          └──────────────┬───────────────┘
+                         │
+                         ▼
+                 AgentApplication
+                         │
+              ┌──────────┼──────────┐
+              │          │          │
+           Session    Agents    Lifecycle
+              │
+              │
+              ▼
+         Application Runtime
+```
+
