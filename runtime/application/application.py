@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-from agents import AgentResult
-from agents.base_agent import BaseAgent
-from models.task_request import TaskRequest
+from typing import TYPE_CHECKING
+
 from models.task_result import TaskResult
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
 from runtime.events.event import Event
 from runtime.events.publisher import EventPublisher
-from runtime.execution import AgentRuntime, ExecutionHandle
-from runtime.execution.execution_runtime import ExecutionRuntime
 from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
 from runtime.session import SessionManager, Session
+
+if TYPE_CHECKING:
+    from agents.base_agent import BaseAgent
+    from agents.agent_result import AgentResult
+    from models.task_request import TaskRequest
+    from runtime.execution.agent_runtime import AgentRuntime
+    from runtime.execution.execution_runtime import ExecutionRuntime
+    from runtime.execution.execution_handle import ExecutionHandle
 
 
 class AgentApplication:

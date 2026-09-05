@@ -1041,3 +1041,48 @@ RuntimeComponent.invoke() 是Runtime Middleware的统一入口。
 >
 > Application-level operation
 
+
+
+
+## Lesson 9: Application Configuration + Assembly
+
+本节目标：
+
+> 让 ApplicationAssembly 成为真正的 Application Composition Root。
+
+### Configuration 和 Assembly 的区分
+
+#### Configuration 
+
+描述： “我要什么样的 Application？”， 例如：
+
+```text
+application_id = "agentos"
+name = "AgentOS"
+
+middleware = [...]
+event publisher = ...
+```
+
+是 **声明性配置（Declarative Configuration）**。
+
+#### Assembly
+
+描述： “如何把这些东西组装成 Application？”
+
+```text
+Configuration
+     ↓
+Assembly
+     ↓
+Application
+```
+
+而不是：
+
+```text
+Configuration
+     ↓
+Application 自己创建一切
+```
+
