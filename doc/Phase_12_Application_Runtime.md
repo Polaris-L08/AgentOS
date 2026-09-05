@@ -996,3 +996,48 @@ Application 是**协调者（Coordinator）**， AgentRuntime是**执行者（Ex
 ```
 
 > Application 管理边界，ExecutionRuntime 管理 Execution，AgentRuntime 管理 Agent Invocation。
+
+
+## Lesson 8: Application Runtime Integration
+
+> Application接入Event和Middleware。
+
+目标形成：
+
+```text
+                    AgentApplication
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+       Application Middleware      Application Events
+              │                         │
+              └────────────┬────────────┘
+                           │
+                           ▼
+                     AgentRuntime
+                           │
+                  ┌────────┴────────┐
+                  │                 │
+             Agent Middleware   Agent Events
+                  │                 │
+                  └────────┬────────┘
+                           ▼
+                         Agent
+```
+
+### Middleware 分层
+
+Phase 9 中确立了以下原则：
+
+> Runtime operation 如果属于 Runtime Boundary，就必须经过 RuntimeComponent.invoke()。
+
+RuntimeComponent.invoke() 是Runtime Middleware的统一入口。
+
+因为 `AgentApplication` 不是普通的 Runtime Component，而是 **Application Boundary(应用边界)**。
+
+所以，Application组合Middleware，而不是继承 RuntimeComponent。
+
+> Application Middleware 的职责
+>
+> Application-level operation
+

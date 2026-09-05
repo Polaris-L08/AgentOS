@@ -5,37 +5,29 @@ from agents.base_agent import BaseAgent
 from models.task_request import TaskRequest
 from models.task_result import TaskResult
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
+from runtime.events.event import Event
+from runtime.events.publisher import EventPublisher
 from runtime.execution import AgentRuntime, ExecutionHandle
 from runtime.execution.execution_runtime import ExecutionRuntime
+from runtime.middleware.middleware_chain import MiddlewareChain
+from runtime.middleware.runtime_operation import RuntimeOperation
 from runtime.session import SessionManager, Session
 
 
 class AgentApplication:
     """
-    Application-level boundary for an AgentOS application.
+    Application-level runtime boundary.
 
-    Application owns long-lived Agent instances and the runtime
-    services used by those agents.
+    AgentApplication owns:
 
-    Lifecycle:
+        - Agents
+        - AgentRuntime
+        - ExecutionRuntime
+        - SessionManager
+        - Application lifecycle
 
-        Application
-            |
-            +---- Agent instances
-            |
-            +---- AgentRuntime
-            |
-            +---- ExecutionRuntime
-
-    Application does NOT execute an Agent directly.
-
-    Agent invocation remains the responsibility of AgentRuntime.
-
-    Execution-specific state remains the responsibility of
-    ExecutionRuntime / RuntimeContext.
-
-    Session and Application lifecycle management will be added
-    in later Phase12 lessons.
+    AgentApplication coordinates runtime components but does not
+    implement Agent execution logic itself.
     """
     def __init__(
             self,
@@ -45,6 +37,8 @@ class AgentApplication:
             execution_runtime: ExecutionRuntime,
             agents: list[BaseAgent] | None = None,
             session_manager: SessionManager | None = None,
+            publisher: EventPublisher | None = None,
+            middleware_chain: MiddlewareChain | None = None,
     ) -> None:
         self.application_id = application_id
         self.name = name
@@ -52,6 +46,9 @@ class AgentApplication:
         self.execution_runtime = execution_runtime
 
         self.session_manager = session_manager or SessionManager()
+
+        self._publisher = publisher
+        self._middleware_chain = middleware_chain
 
         self._agents: dict[str, BaseAgent] = {}
 
@@ -61,8 +58,9 @@ class AgentApplication:
             self.add_agent(agent)
 
     # ------------------------------------------------------------------
-    # Lifecycle
+    # Properties
     # ------------------------------------------------------------------
+
     @property
     def state(self) -> ApplicationState:
         """
@@ -76,6 +74,21 @@ class AgentApplication:
         Return True when the Application is accepting runtime work.
         """
         return self._state == ApplicationState.RUNNING
+
+    @property
+    def agents(self) -> tuple[BaseAgent, ...]:
+        """
+        Return all Agent instances owned by this Application.
+
+        A tuple is returned so callers cannot mutate the internal
+        Application ownership collection directly.
+        """
+
+        return tuple(self._agents.values())
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
         """
@@ -107,6 +120,17 @@ class AgentApplication:
 
         self._state = ApplicationState.RUNNING
 
+        await self._publish(
+            Event(
+                type="application.started",
+                source="agent_application",
+                payload={
+                    "application_id": self.application_id,
+                    "name": self.name,
+                }
+            )
+        )
+
     async def stop(self) -> None:
         """
         Stop the Application.
@@ -136,6 +160,17 @@ class AgentApplication:
             raise
         else:
             self._state = ApplicationState.STOPPED
+
+            await self._publish(
+                Event(
+                    type="application.stopped",
+                    source="agent_application",
+                    payload={
+                        "application_id": self.application_id,
+                        "name": self.name,
+                    }
+                )
+            )
 
     async def execute(
             self,
@@ -188,19 +223,6 @@ class AgentApplication:
         finally:
             await self.execution_runtime.close(runtime_context)
 
-    async def _shutdown_components(self) -> None:
-        """
-        Application component shutdown hook.
-
-        There are currently no Application-owned components with a
-        service-level shutdown lifecycle.
-
-        This method intentionally remains empty until later lessons
-        introduce Application Assembly and component lifecycle
-        orchestration.
-        """
-        return
-
     # ------------------------------------------------------------------
     # Agent ownership
     # ------------------------------------------------------------------
@@ -238,17 +260,6 @@ class AgentApplication:
             raise KeyError(
                 f"Agent not found in Application: {agent_id}"
             ) from None
-
-    @property
-    def agents(self) -> tuple[BaseAgent, ...]:
-        """
-        Return all Agent instances owned by this Application.
-
-        A tuple is returned so callers cannot mutate the internal
-        Application ownership collection directly.
-        """
-
-        return tuple(self._agents.values())
 
     def has_agent(self, agent_id: str) -> bool:
         """
@@ -310,6 +321,10 @@ class AgentApplication:
             session_id
         )
 
+    # ------------------------------------------------------------------
+    # Agent invocation
+    # ------------------------------------------------------------------
+
     async def invoke_agent(
             self,
             agent_id: str,
@@ -319,32 +334,91 @@ class AgentApplication:
         """
         Invoke an Agent through the Application-owned AgentRuntime.
 
-        This method is intentionally thin.
+        This is an Application coordination boundary.
 
         Application is responsible for:
-            - validating Application lifecycle
-            - resolving the Agent instance
-            - obtaining the Execution context
 
-        AgentRuntime is responsible for:
-            - creating/validating AgentExecutionContext
-            - middleware
-            - events
-            - invoking the Agent
+            - Application lifecycle validation
+            - Agent resolution
+            - Application-level middleware
+
+        AgentRuntime remains responsible for:
+
+            - AgentExecutionContext
+            - Agent execution
+            - Agent middleware
+            - Agent lifecycle events
         """
         self._require_state(ApplicationState.RUNNING)
 
         agent = self.get_agent(agent_id)
 
+        operation = RuntimeOperation(
+            name="application.invoke_agent",
+            component="agent_application",
+            metadata={
+                "application_id": self.application_id,
+                "agent_id": agent.identity.agent_id,
+                "agent_type": agent.identity.agent_type,
+                "agent_name": agent.identity.name,
+            },
+        )
+
+        if self._middleware_chain is None:
+            return await self._invoke_agent(agent, task, execution_handle)
+
+        await self._middleware_chain.before(operation,execution_handle.runtime_context)
+
+        try:
+            result = await self._invoke_agent(agent, task, execution_handle)
+        except Exception as error:
+            await self._middleware_chain.on_error(
+                operation,
+                execution_handle.runtime_context,
+                error
+            )
+            raise
+        else:
+            await self._middleware_chain.after(
+                operation,
+                execution_handle.runtime_context,
+                result
+            )
+            return result
+
+    async def _invoke_agent(
+            self,
+            agent: BaseAgent,
+            task: TaskRequest,
+            execution_handle: ExecutionHandle,
+    ) -> AgentResult:
         return await self.agent_runtime.execute(
             agent=agent,
             task=task,
-            runtime_context=execution_handle.runtime_context
+            runtime_context=execution_handle.runtime_context,
         )
 
     # ------------------------------------------------------------------
-    # Internal lifecycle validation
+    # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _publish(self, event: Event) -> None:
+        if self._publisher is None:
+            return
+        self._publisher.emit(event)
+
+    async def _shutdown_components(self) -> None:
+        """
+        Application component shutdown hook.
+
+        There are currently no Application-owned components with a
+        service-level shutdown lifecycle.
+
+        This method intentionally remains empty until later lessons
+        introduce Application Assembly and component lifecycle
+        orchestration.
+        """
+        return
 
     def _require_state(self, expected: ApplicationState) -> None:
         """
@@ -355,9 +429,9 @@ class AgentApplication:
                 If the requested lifecycle operation is invalid.
         """
 
-        if self._state != expected:
+        if self._state is not expected:
             raise ApplicationLifecycleError(
-                "Invalid Application lifecycle transition: "
-                f"operation requires state '{expected.value}', "
-                f"but current state is '{self._state.value}'."
+                f"Invalid Application lifecycle state: "
+                f"expected '{expected.value}', "
+                f"actual '{self._state.value}'."
             )
