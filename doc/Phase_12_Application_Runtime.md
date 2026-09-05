@@ -1114,3 +1114,52 @@ Application 自己创建一切
          Application Runtime
 ```
 
+
+## Lesson 10： Public Application Execution API
+
+本节目标：
+
+> 把底层 Execution Runtime 正式封装成 Application 的公共执行 API。
+
+### 目前的问题
+
+当前架构下，用户想要执行一个Agent：
+
+```python
+execution_handle = execution_runtime.create_execution()
+
+result = await application.invoke_agent(
+    agent_id="research",
+    task=task,
+    execution_handle=execution_handle,
+)
+
+await execution_handle.close()
+```
+
+这个过程暴漏了太多 Runtime 内部概念。
+
+希望的理想情况是：
+
+```text
+User
+ │
+ ▼
+Application.execute(task)
+ │
+ ├── create Execution
+ │
+ ├── invoke Agent
+ │
+ ├── close Execution
+ │
+ └── return TaskResult
+```
+
+Application API也不能简单的写为： `await application.execute(task, agent_id="research")`
+
+因为这会把 API 固定为： `User → Application → 指定 Agent`
+
+实际的 Application API 应该为： `application.execute(task)`,把任务交给 Application的执行编排层（Execution Orchestration）。
+
+但是当前没有SupervisorAgent，所以先引入 `ApplicationExecutor`作为临时替代。

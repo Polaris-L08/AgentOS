@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from models.task_result import TaskResult
+from runtime.application.application_executor import ApplicationExecutor
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
 from runtime.events.event import Event
 from runtime.events.publisher import EventPublisher
@@ -61,6 +62,11 @@ class AgentApplication:
 
         for agent in agents or []:
             self.add_agent(agent)
+
+        self._executor = ApplicationExecutor(
+            application=self,
+            execution_runtime=self.execution_runtime,
+        )
 
     # ------------------------------------------------------------------
     # Properties
@@ -180,53 +186,20 @@ class AgentApplication:
     async def execute(
             self,
             task: TaskRequest,
-            agent_id: str,
     ) -> TaskResult:
         """
-        Execute one TaskRequest through an Agent.
+        Public Application execution API.
 
-        Application is responsible for the execution boundary.
-
-        AgentRuntime is responsible for Agent invocation.
-
-        Flow:
-
-            TaskRequest
-                ↓
-            RuntimeContext
-                ↓
-            AgentRuntime
-                ↓
-            Agent
-                ↓
-            AgentResult
-                ↓
-            TaskResult
-
-        RuntimeContext is created for this execution only.
+        Application owns the public execution boundary while
+        ApplicationExecutor owns the internal execution lifecycle.
         """
         self._require_state(ApplicationState.RUNNING)
 
-        agent = self.get_agent(agent_id)
-
-        runtime_context = self.execution_runtime.create_context()
-
-        try:
-            agent_result = await self.agent_runtime.execute(
-                agent=agent,
-                task=task,
-                runtime_context=runtime_context,
-            )
-            return TaskResult(
-                success=agent_result.success,
-                answer=str(agent_result.output),
-                metadata={
-                    "agent_id": agent.identity.agent_id,
-                    "agent_type": agent.identity.agent_type,
-                },
-            )
-        finally:
-            await self.execution_runtime.close(runtime_context)
+        # A RuntimeContext does not exist before ExecutionRuntime creates
+        # an ExecutionHandle. Therefore, Application-level middleware for
+        # the execute operation will be introduced around the actual
+        # execution context in a later refinement.
+        return await self._executor.execute(task)
 
     # ------------------------------------------------------------------
     # Agent ownership
