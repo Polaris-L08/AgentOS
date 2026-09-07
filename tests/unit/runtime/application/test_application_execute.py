@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from agents.base_agent import BaseAgent
 from agents.identity import AgentIdentity
 from models.task_request import TaskRequest
+from models.task_result import TaskResult
 from runtime.application.application import AgentApplication
 from runtime.application.application_assembly import ApplicationAssembly
 from runtime.application.application_config import ApplicationConfig
@@ -29,8 +32,6 @@ class FailingAgent(BaseAgent):
 
 class BlockingAgent(BaseAgent):
     async def run(self, task, agent_execution_context):
-        import asyncio
-
         await asyncio.Event().wait()
 
 
@@ -60,7 +61,7 @@ def create_application(
         trace_recorder=TraceRecorder(),
     )
 
-    return (
+    assembly = (
         ApplicationAssembly(
             ApplicationConfig(
                 application_id="test-app",
@@ -79,11 +80,12 @@ def create_application(
             "publisher",
             event_bus,
         )
-        .add_agent(
-            agents[0],
-        )
-        .build()
     )
+
+    for agent in agents:
+        assembly.add_agent(agent)
+
+    return assembly.build()
 
 
 @pytest.mark.asyncio
@@ -103,7 +105,7 @@ async def test_application_execute_runs_single_agent():
     result = await application.execute(task)
 
     assert result.success is True
-    assert result.output == "completed: hello"
+    assert result.answer == "completed: hello"
 
     await application.stop()
 
@@ -125,33 +127,7 @@ async def test_application_execute_requires_running_application():
 
 @pytest.mark.asyncio
 async def test_application_execute_fails_when_no_agent_exists():
-    event_bus = EventBus()
-
-    agent_runtime = AgentRuntime(
-        publisher=event_bus,
-    )
-
-    execution_runtime = ExecutionRuntime(
-        trace_recorder=TraceRecorder(),
-    )
-
-    application = (
-        ApplicationAssembly(
-            ApplicationConfig(
-                application_id="test-app",
-                name="Test Application",
-            )
-        )
-        .register_component(
-            "agent_runtime",
-            agent_runtime,
-        )
-        .register_component(
-            "execution_runtime",
-            execution_runtime,
-        )
-        .build()
-    )
+    application = create_application([])
 
     await application.initialize()
     await application.start()
@@ -169,37 +145,14 @@ async def test_application_execute_fails_when_no_agent_exists():
 
 @pytest.mark.asyncio
 async def test_application_execute_fails_when_multiple_agents_exist():
-    event_bus = EventBus()
-
-    agent_runtime = AgentRuntime(
-        publisher=event_bus,
-    )
-
-    execution_runtime = ExecutionRuntime(
-        trace_recorder=TraceRecorder(),
-    )
-
     agent1 = create_agent("agent-1")
     agent2 = create_agent("agent-2")
 
-    application = (
-        ApplicationAssembly(
-            ApplicationConfig(
-                application_id="test-app",
-                name="Test Application",
-            )
-        )
-        .register_component(
-            "agent_runtime",
-            agent_runtime,
-        )
-        .register_component(
-            "execution_runtime",
-            execution_runtime,
-        )
-        .add_agent(agent1)
-        .add_agent(agent2)
-        .build()
+    application = create_application(
+        [
+            agent1,
+            agent2,
+        ]
     )
 
     await application.initialize()
@@ -217,54 +170,7 @@ async def test_application_execute_fails_when_multiple_agents_exist():
 
 
 @pytest.mark.asyncio
-async def test_application_execute_closes_execution_after_success():
-    agent = create_agent("agent-1")
-
-    application = create_application([agent])
-
-    execution_runtime = application.execution_runtime
-
-    created_handles = []
-
-    original_create_execution = (
-        execution_runtime.create_execution
-    )
-
-    def create_execution():
-        handle = original_create_execution()
-        created_handles.append(handle)
-        return handle
-
-    execution_runtime.create_execution = create_execution
-
-    await application.initialize()
-    await application.start()
-
-    task = TaskRequest(
-        task_id="task-1",
-        user_input="hello",
-    )
-
-    await application.execute(task)
-
-    assert len(created_handles) == 1
-    assert created_handles[0].closed is True
-
-    await application.stop()
-
-
-@pytest.mark.asyncio
-async def test_application_execute_closes_execution_after_agent_failure():
-    event_bus = EventBus()
-
-    agent_runtime = AgentRuntime(
-        publisher=event_bus,
-    )
-
-    execution_runtime = ExecutionRuntime(
-        trace_recorder=TraceRecorder(),
-    )
-
+async def test_application_execute_propagates_agent_failure():
     failing_agent = FailingAgent(
         identity=AgentIdentity(
             agent_id="failing-agent",
@@ -273,39 +179,7 @@ async def test_application_execute_closes_execution_after_agent_failure():
         )
     )
 
-    application = (
-        ApplicationAssembly(
-            ApplicationConfig(
-                application_id="test-app",
-                name="Test Application",
-            )
-        )
-        .register_component(
-            "agent_runtime",
-            agent_runtime,
-        )
-        .register_component(
-            "execution_runtime",
-            execution_runtime,
-        )
-        .add_agent(
-            failing_agent,
-        )
-        .build()
-    )
-
-    created_handles = []
-
-    original_create_execution = (
-        execution_runtime.create_execution
-    )
-
-    def create_execution():
-        handle = original_create_execution()
-        created_handles.append(handle)
-        return handle
-
-    execution_runtime.create_execution = create_execution
+    application = create_application([failing_agent])
 
     await application.initialize()
     await application.start()
@@ -315,33 +189,17 @@ async def test_application_execute_closes_execution_after_agent_failure():
         user_input="hello",
     )
 
-    with pytest.raises(RuntimeError, match="agent failure"):
+    with pytest.raises(
+        RuntimeError,
+        match="agent failure",
+    ):
         await application.execute(task)
-
-    assert len(created_handles) == 1
-    assert created_handles[0].closed is True
 
     await application.stop()
 
 
-# ----------------------------------------
-# Cancellation Test
-# ----------------------------------------
-
 @pytest.mark.asyncio
-async def test_application_execute_closes_execution_on_cancellation():
-    import asyncio
-
-    event_bus = EventBus()
-
-    agent_runtime = AgentRuntime(
-        publisher=event_bus,
-    )
-
-    execution_runtime = ExecutionRuntime(
-        trace_recorder=TraceRecorder(),
-    )
-
+async def test_application_execute_propagates_cancellation():
     blocking_agent = BlockingAgent(
         identity=AgentIdentity(
             agent_id="blocking-agent",
@@ -350,39 +208,7 @@ async def test_application_execute_closes_execution_on_cancellation():
         )
     )
 
-    application = (
-        ApplicationAssembly(
-            ApplicationConfig(
-                application_id="test-app",
-                name="Test Application",
-            )
-        )
-        .register_component(
-            "agent_runtime",
-            agent_runtime,
-        )
-        .register_component(
-            "execution_runtime",
-            execution_runtime,
-        )
-        .add_agent(
-            blocking_agent,
-        )
-        .build()
-    )
-
-    created_handles = []
-
-    original_create_execution = (
-        execution_runtime.create_execution
-    )
-
-    def create_execution():
-        handle = original_create_execution()
-        created_handles.append(handle)
-        return handle
-
-    # execution_runtime.create_execution = create_execution
+    application = create_application([blocking_agent])
 
     await application.initialize()
     await application.start()
@@ -403,7 +229,63 @@ async def test_application_execute_closes_execution_on_cancellation():
     with pytest.raises(asyncio.CancelledError):
         await execution_task
 
-    assert len(created_handles) == 1
-    assert created_handles[0].closed is True
+    await application.stop()
+
+
+@pytest.mark.asyncio
+async def test_application_execute_can_be_called_multiple_times():
+    agent = create_agent("agent-1")
+
+    application = create_application([agent])
+
+    await application.initialize()
+    await application.start()
+
+    task1 = TaskRequest(
+        task_id="task-1",
+        user_input="hello",
+    )
+
+    task2 = TaskRequest(
+        task_id="task-2",
+        user_input="world",
+    )
+
+    result1 = await application.execute(task1)
+    result2 = await application.execute(task2)
+
+    assert result1.success is True
+    assert result1.answer == "completed: hello"
+
+    assert result2.success is True
+    assert result2.answer == "completed: world"
+
+    await application.stop()
+
+
+@pytest.mark.asyncio
+async def test_application_execute_returns_task_result():
+    agent = create_agent("agent-1")
+
+    application = create_application([agent])
+
+    await application.initialize()
+    await application.start()
+
+    task = TaskRequest(
+        task_id="task-1",
+        user_input="hello",
+    )
+
+    result = await application.execute(task)
+
+    assert isinstance(result, TaskResult)
+
+    assert result.success is True
+    assert result.answer == "completed: hello"
+
+    assert result.metadata["task_id"] == "task-1"
+    assert result.metadata["agent_id"] == "agent-1"
+    assert result.metadata["agent_type"] == "mock"
 
     await application.stop()

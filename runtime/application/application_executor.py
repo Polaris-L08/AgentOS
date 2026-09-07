@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from agents import AgentResult
 from agents.base_agent import BaseAgent
 from models.task_request import TaskRequest
+from models.task_result import TaskResult
 from runtime.application.application_lifecycle import (
     ApplicationLifecycleError,
 )
-from runtime.execution.execution_handle import ExecutionHandle
 from runtime.execution.execution_runtime import ExecutionRuntime
 
 
@@ -44,11 +45,13 @@ class ApplicationExecutor:
         try:
             agent = self._select_default_agent()
 
-            return await self._application.invoke_agent(
+            agent_result = await self._application.invoke_agent(
                 agent_id=agent.identity.agent_id,
                 task=task,
                 execution_handle=execution_handle,
             )
+
+            return self._to_task_result(task, agent, agent_result)
         finally:
             await execution_handle.close()
 
@@ -67,3 +70,19 @@ class ApplicationExecutor:
             )
 
         return agents[0]
+
+    def _to_task_result(
+            self,
+            task: TaskRequest,
+            agent: BaseAgent,
+            agent_result: AgentResult,
+    ) -> TaskResult:
+        return TaskResult(
+            success=agent_result.success,
+            answer=agent_result.output or "",
+            metadata={
+                "task_id": task.task_id,
+                "agent_id":agent.identity.agent_id,
+                "agent_type": agent.identity.agent_type
+            }
+        )
