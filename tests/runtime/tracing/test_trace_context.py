@@ -21,7 +21,7 @@ def test_trace_context_span_lifecycle():
 
     span = ctx.start_span("tool.execute")
 
-    assert span.span_id in trace.spans
+    assert span.span_id in trace._spans
     assert ctx.current_span_id == span.span_id
 
     ctx.end_span("success")

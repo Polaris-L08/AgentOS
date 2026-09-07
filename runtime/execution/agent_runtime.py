@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agents import BaseAgent, AgentResult
 from models.task_request import TaskRequest
+from runtime.checkpoint.checkpoint import AgentCheckpoint
 from runtime.component import RuntimeComponent
 from runtime.context import AgentExecutionContext
 from runtime.context.runtime_context import RuntimeContext
@@ -104,19 +105,16 @@ class AgentRuntime(RuntimeComponent):
         #     reuse restored context
         #
         if agent_execution_context is None:
-            agent_execution_context = AgentExecutionContext.create(runtime_context, agent)
+            agent_execution_context = self._create_execution_context(
+                runtime_context=runtime_context,
+                agent=agent,
+            )
         else:
-            # A restored context must belong to the same Agent.
-            if agent_execution_context.agent_identity.agent_id != agent.identity.agent_id:
-                raise ValueError(
-                    "AgentExecutionContext belongs to a different Agent:"
-                    f"{agent_execution_context.agent_identity.agent_id}"
-                )
-            # A restored context must also belong to the same Runtime execution.
-            if agent_execution_context.runtime_context.runtime_id != runtime_context.runtime_id:
-                raise ValueError(
-                    "AgentExecutionContext belongs to a different RuntimeContext."
-                )
+            self._validate_execution_context(
+                runtime_context=runtime_context,
+                agent=agent,
+                execution_context=agent_execution_context
+            )
 
         await self._publish(
             Event(
@@ -158,8 +156,8 @@ class AgentRuntime(RuntimeComponent):
             )
 
             return result
-        except Exception as e:
 
+        except Exception as e:
             await self._publish(
                 Event(
                     type="agent.failed",
@@ -174,6 +172,86 @@ class AgentRuntime(RuntimeComponent):
                 )
             )
             raise
+
+    def _create_execution_context(
+            self,
+            runtime_context: RuntimeContext,
+            agent: BaseAgent,
+    ) -> AgentExecutionContext:
+        """
+        Create a new execution-local context for one Agent invocation.
+
+        This method is used only for normal execution.
+
+        AgentContext and MemoryRuntime remain owned by the Agent.
+        """
+        return AgentExecutionContext.create(runtime_context, agent)
+
+    def _restore_execution_context(
+            self,
+            runtime_context: RuntimeContext,
+            agent: BaseAgent,
+            checkpoint: AgentCheckpoint,
+    ) -> AgentExecutionContext:
+        """
+        Restore execution-local state for one Agent invocation.
+
+        The checkpoint contains execution-local state:
+
+            - ContextState
+            - LoopState
+
+        The checkpoint does NOT replace:
+
+            - AgentContext
+            - MemoryRuntime
+            - AgentIdentity
+
+        Those continue to come from the live Agent instance.
+        """
+        self._validate_agent_checkpoint(agent, checkpoint)
+        return AgentExecutionContext.restore(
+            runtime_context=runtime_context,
+            agent=agent,
+            checkpoint=checkpoint,
+        )
+
+    def _validate_execution_context(
+            self,
+            runtime_context: RuntimeContext,
+            agent: BaseAgent,
+            execution_context: AgentExecutionContext,
+    ) -> None:
+        """
+        Validate that an existing AgentExecutionContext belongs
+        to the current Agent and Runtime execution.
+        """
+        if execution_context.agent_identity.agent_id != agent.identity.agent_id:
+            raise ValueError(
+                "AgentExecutionContext belongs to a different Agent:"
+                f"{execution_context.agent_identity.agent_id}"
+            )
+
+        if execution_context.runtime_context.runtime_id != runtime_context.runtime_id:
+            raise ValueError(
+                "AgentExecutionContext belongs to a different RuntimeContext:"
+            )
+
+    def _validate_agent_checkpoint(
+            self,
+            agent: BaseAgent,
+            checkpoint: AgentCheckpoint,
+    ) -> None:
+        """
+        Validate that an AgentCheckpoint belongs to the Agent
+        being recovered.
+        """
+        if checkpoint.agent_id != agent.identity.agent_id:
+            raise ValueError(
+                "Agent checkpoint identity mismatch: "
+                f"checkpoint={checkpoint.agent_id}, "
+                f"agent={agent.identity.agent_id}"
+            )
 
     async def _publish(self, event: Event):
         """

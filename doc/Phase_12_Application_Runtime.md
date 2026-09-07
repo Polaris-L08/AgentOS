@@ -1306,3 +1306,279 @@ logging
 但处理完以后： `raise`，仍然可以让异常继续传播。
 
 所以： Error Propagation 和 Error Handling 可以同时存在。
+
+
+## Lesson 12: Application + Checkpoint / Recovery
+
+Phase 7 中建立了Checkpoint、CheckpointStore等，但是这些东西目前还是相对独立的，并没有和Application连接。
+
+### Checkpoint的层级
+
+现在由三种不同的生命周期：
+
+```text
+Application
+    │
+    ├── Session
+    │
+    └── Execution
+            │
+            ├── RuntimeContext
+            │
+            └── AgentExecutionContext
+```
+
+Checkpoint应该属于 **Execution 层**，而不是Application层。
+
+Application只提供 **Recovery的入口**。
+
+### 职责划分
+
+```text
+Application
+    │
+    │ public API
+    ▼
+ApplicationExecutor
+    │
+    ▼
+ExecutionRuntime
+    │
+    ▼
+CheckpointManager
+    │
+    ▼
+CheckpointStore
+```
+
+**Application**
+
+负责：
+
+```text
+Application lifecycle
+Application API
+Session ownership
+Agent ownership
+```
+
+**ApplicationExecutor**
+
+负责：
+
+```text
+Application-level execution coordination
+```
+
+**ExecutionRuntime**
+
+负责：
+
+```text
+Execution lifecycle
+Execution context
+Execution recovery
+```
+
+**CheckpointManager**
+
+负责：
+
+```text
+Checkpoint save
+Checkpoint load
+Checkpoint validation
+```
+
+**CheckpointStore**
+
+负责：
+
+```text
+Checkpoint persistence
+```
+
+### Recovery的正确过程
+
+```text
+Checkpoint
+   │
+   ├── runtime_id
+   ├── task_id
+   ├── shared_context
+   └── agent checkpoints
+          │
+          ▼
+ExecutionRuntime
+          │
+          ├── create new TraceContext
+          │
+          ├── reconstruct RuntimeContext
+          │
+          └── create ExecutionHandle
+                    │
+                    ▼
+             AgentExecutionContext
+```
+
+> 恢复的是Execution State，而不是恢复 Python runtime objects。
+
+### Checkpoint Identity
+
+runtime_id 是 Execution Identity（执行身份）。
+
+因此， Checkpoint.runtime_id应该能够找到 Execution，
+
+但是，Checkpoint.runtime_id **不意味着可以直接恢复旧RuntimeContext对象**。
+
+### Lesson12-A: Checkpoint / RuntimeContext Recovery Model
+
+修改
+`runtime/context/runtime_context.py`
+
+加入：
+
+`RuntimeContext.create()`
+
+并让：
+
+`ExecutionRuntime.create_context()`
+
+使用这个工厂方法。
+
+### Lesson12-B: ExecutionRuntime Recovery
+
+本节处理：
+
+Execution-level Recovery（执行级恢复）。完成后 `ExecutionRuntime`将同时支持两种Execution创建方式：
+
+```text
+正常执行：
+
+create_execution()
+    ↓
+new RuntimeContext
+    ↓
+ExecutionHandle
+
+
+恢复执行：
+
+resume_execution(checkpoint)
+    ↓
+reconstructed RuntimeContext
+    ↓
+ExecutionHandle
+```
+
+> 正常执行和恢复执行最终都返回`ExecutionHandle`。
+
+#### Recovery后Runtime Identity必须保持
+
+假设原 Execution：
+
+```text
+runtime_id = exec-001
+trace_id   = trace-A
+```
+
+创建 Checkpoint：
+
+```text
+Checkpoint
+    runtime_id = exec-001
+```
+
+发生故障。
+
+然后恢复：
+
+```text
+runtime_id = exec-001
+trace_id   = trace-B
+```
+
+所以：
+
+```text
+┌──────────────────────────────┐
+│ Execution exec-001            │
+│                              │
+│  original execution          │
+│      trace-A                 │
+│                              │
+│  recovery execution          │
+│      trace-B                 │
+└──────────────────────────────┘
+```
+
+这两个 ID 的职责不能混淆：
+
+| **ID**       | **Recovery** |
+|--------------|--------------|
+| `runtime_id` | 保持不变         |
+| `trace_id    | 重新生成         |
+| `span_id`    | 重新生成         |
+
+#### `shared_context` 也应该恢复
+
+### Lesson12-C: Agent Runtime Recovery
+
+> 恢复某个具体Agent的执行状态
+
+#### 重新明确三种Context
+
+##### RuntimeContext
+
+> 一次Execution的运行时上下文。
+
+```text
+User Request
+     │
+     ▼
+ExecutionRuntime
+     │
+     ▼
+RuntimeContext
+```
+
+属于整个Execution，多个Agent共享。
+
+##### AgentExecutionContext
+
+> 一次 Agent Invocation 的上下文。
+
+```text
+Execution #100
+│
+├── Agent A invocation #1
+│      └── AgentExecutionContext
+│
+├── Agent B invocation #1
+│      └── AgentExecutionContext
+│
+└── Agent A invocation #2
+       └── AgentExecutionContext
+```
+
+##### AgentContext / MemoryRuntime
+
+> 属于 Agent Instance。
+
+例如：
+
+```text
+ResearchAgent instance
+│
+├── AgentIdentity
+├── AgentContext
+└── MemoryRuntime
+```
+
+是长期存在的，属于AgentInstance本身。
+
+#### 重构AgentRuntime
+
+> 把AgentExecutionContext的创建/恢复统一收敛到AgentRuntime。
+
+但是Recovery API 暂时不要暴露给Application。
