@@ -1163,3 +1163,146 @@ Application API也不能简单的写为： `await application.execute(task, agen
 实际的 Application API 应该为： `application.execute(task)`,把任务交给 Application的执行编排层（Execution Orchestration）。
 
 但是当前没有SupervisorAgent，所以先引入 `ApplicationExecutor`作为临时替代。
+
+
+## Lesson 11: Application Error/Cancellation/Shutdown
+
+> 执行异常处理
+
+### 三个问题
+
+#### Agent 执行异常
+
+> 业务异常不能导致Execution生命周期泄露。
+
+保证：
+
+```text
+Agent failure
+      │
+      ▼
+异常向上传播
+      │
+      ▼
+Application.execute()
+      │
+      └── ExecutionHandle finally.close()
+```
+
+#### Cancellation
+
+`asyncio.CancelledError`不是普通的业务异常，不能当作 `RuntimeError`处理。
+
+`asyncio.CancelledError`代表**当前Execution被请求停止**。
+
+正常语义应该为：
+
+```text
+Cancellation
+    │
+    ▼
+Execution finally cleanup
+    │
+    ▼
+CancelledError continues propagating
+```
+
+#### Application.stop()
+
+当前的Application lifecycle是：
+
+```text
+CREATED
+   │
+   ▼
+INITIALIZED
+   │
+   ▼
+RUNNING
+   │
+   ▼
+STOPPING
+   │
+   ▼
+STOPPED
+```
+
+目前 `Application.stop()` 只是调用 ` _shutdown_components()`。这在Lesson 3是合理的。
+
+明确： **Application shutdown 和 Execution shutdown 是两个不同层级的生命周期**。
+
+### 明确 Error Boundary
+
+> 原则： Application 不吞业务异常。
+
+```text
+Agent
+  ↓
+AgentRuntime
+  ↓
+Application
+  ↓
+Caller
+```
+
+错误应该原样传播。
+
+### Cancellation
+
+> Cancellation 不应该破坏 Execution cleanup。
+
+### Shutdown
+
+### Lesson 11的核心状态机
+
+```text
+CREATED
+   │
+ initialize()
+   ▼
+INITIALIZED
+   │
+ start()
+   ▼
+RUNNING
+   │
+ stop()
+   ▼
+STOPPING
+   │
+   ├───────────────┐
+   │               │
+ success          failure
+   │               │
+   ▼               ▼
+STOPPED          STOPPING
+```
+
+### 关键的工业级原则
+
+建立： **Error Propagation VS Error Handling**
+
+#### Error Propagation
+
+异常向上传播。 
+
+Application不应该随意把 RuntimeError 转换成 `TaskResult(success = False,...)`
+
+否则调用方无法区分： 正常完成但业务结果失败 与 Runtime execution failure。
+
+#### Error Handling
+
+Runtime 可以负责：
+
+```text
+cleanup
+trace
+event
+middleware
+checkpoint
+logging
+```
+
+但处理完以后： `raise`，仍然可以让异常继续传播。
+
+所以： Error Propagation 和 Error Handling 可以同时存在。
