@@ -19,14 +19,11 @@ class ApplicationExecutor:
     This class hides low-level execution lifecycle details from the
     public Application API.
 
-    Coordinates Application-level execution lifecycle.
-
-    ApplicationExecutor owns ExecutionHandle lifecycle.
-
     Responsibilities:
         - create ExecutionHandle for normal execution
         - recover ExecutionHandle from Checkpoint
-        - close ExecutionHandle after execution
+        - resume a specific Agent execution from Checkpoint
+        - close ExecutionHandle after normal execution
 
     ApplicationExecutor does NOT own:
         - Checkpoint persistence
@@ -34,6 +31,12 @@ class ApplicationExecutor:
         - MemoryRuntime
         - Agent scheduling
         - Workflow decisions
+
+    The explicit ``agent_id`` used by recovery is a temporary
+    capability-validation mechanism.
+
+    A future Workflow Runtime will determine which Agent should
+    resume automatically.
     """
 
     def __init__(
@@ -47,7 +50,7 @@ class ApplicationExecutor:
     async def execute(
         self,
         task: TaskRequest,
-    ):
+    ) -> TaskResult:
         """
         Execute a new Application task.
 
@@ -76,16 +79,81 @@ class ApplicationExecutor:
         Recover an existing Execution from a Checkpoint.
 
         This method reconstructs the ExecutionHandle but does not
-        execute an Agent yet.
+        execute an Agent.
 
-        The caller owns the returned handle and is responsible for
-        closing it.
+        The caller owns the returned handle and is responsible
+        for closing it.
 
-        This method is intentionally internal to the Application
-        execution layer. It is not the final public Application
-        recovery API.
+        This is the low-level Application recovery primitive.
         """
         return self._execution_runtime.resume_execution(checkpoint)
+
+    async def recover_agent_execution(
+            self,
+            checkpoint: Checkpoint,
+            agent_id: str,
+            task: TaskRequest
+    ) -> AgentResult:
+        """
+        Resume one Agent execution from a Checkpoint.
+
+        Recovery flow:
+
+            Checkpoint
+                |
+                v
+            ExecutionHandle
+                |
+                v
+            restored RuntimeContext
+                |
+                v
+            AgentCheckpoint
+                |
+                v
+            AgentExecutionContext
+                |
+                v
+            AgentRuntime
+                |
+                v
+            Agent
+
+        The Agent instance is resolved from the Application's
+        existing Agent registry.
+
+        The Agent instance itself is NOT recreated.
+
+        This method is intentionally an internal recovery primitive.
+        Workflow-level Agent selection will be introduced later.
+        """
+
+        execution_handle = await self.recover_execution(checkpoint=checkpoint)
+
+        try:
+            agent = self._application.get_agent(agent_id)
+            agent_checkpoint = checkpoint.agents.get(agent.identity.agent_id)
+
+            if agent_checkpoint is None:
+                raise ApplicationLifecycleError(
+                    f"Checkpoint does not contain an AgentCheckpoint for Agent: {agent_id}"
+                )
+
+            agent_execution_context = (
+                self._application.agent_runtime.restore_execution_context(
+                    runtime_context=execution_handle.runtime_context,
+                    agent=agent,
+                    checkpoint=agent_checkpoint
+            ))
+
+            return await self._application.agent_runtime.execute(
+                agent,
+                task,
+                execution_handle.runtime_context,
+                agent_execution_context,
+            )
+        finally:
+            await execution_handle.close()
 
     def _select_default_agent(self) -> BaseAgent:
         agents = self._application.agents

@@ -1656,3 +1656,89 @@ finally close()
 ```
 
 > ExecutionHandle 的生命周期仍然由 ApplicationExecutor 管理。
+
+### Lesson12-E: End-to-End Execution Recovery
+
+目标：
+
+> 让已经存在的 SupervisorAgent 能够从 Checkpoint 恢复，并继续执行。
+
+**Normal execution:**
+
+```text
+AgentRuntime
+    ↓
+create AgentExecutionContext
+    ↓
+SupervisorAgent.run(context)
+```
+
+**Recovery execution**:
+
+```text
+Checkpoint
+    ↓
+AgentRuntime
+    ↓
+restore AgentExecutionContext
+    ↓
+SupervisorAgent.run(restored_context)
+```
+
+Agent完全不知道是normal还是recovery。
+
+#### 增加 Recovery Execution Primitive
+
+上一节中增加了 `ApplicationExecutor.recover_execution()`
+
+他的职责非常窄： **只负责从 Checkpoint 创建 ExecutionHandle。**
+
+不负责：
+
+ - 选择 Agent
+ - 执行 Supervisor
+ - Workflow scheduling
+ - Agent lifecycle
+
+`recover_execution()` 暂时只是一个**internal recovery primitive（内部恢复用语）**。不是最终的API。
+
+#### Recovery 流程
+
+```text
+                    TaskRequest
+                         │
+                         ▼
+                    Supervisor
+                         │
+                         ▼
+                   ResearchAgent
+                         │
+                         ▼
+                    AgentResult
+                         │
+                         ▼
+                  SharedContext
+                         │
+                         ▼
+                Supervisor LoopState
+                         │
+                         ▼
+                    Checkpoint
+                         │
+                    ── CRASH ──
+                         │
+                         ▼
+              ExecutionRuntime.resume
+                         │
+                         ▼
+                  RuntimeContext
+                         │
+                         ▼
+             restored Supervisor Context
+                         │
+                         ▼
+                    Supervisor
+                         │
+                         ▼
+                       final
+```

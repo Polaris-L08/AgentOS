@@ -13,7 +13,7 @@ from runtime.middleware.runtime_operation import RuntimeOperation
 
 class ToolExecutor(RuntimeComponent):
 
-    def __init__(self, registry: ToolRegistry, publisher: EventPublisher, middleware_chain: MiddlewareChain | None = None):
+    def __init__(self, registry: ToolRegistry, publisher: EventPublisher | None = None, middleware_chain: MiddlewareChain | None = None):
         super().__init__(middleware_chain)
         self.registry = registry
         self._publisher = publisher

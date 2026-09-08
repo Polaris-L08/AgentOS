@@ -187,7 +187,7 @@ class AgentRuntime(RuntimeComponent):
         """
         return AgentExecutionContext.create(runtime_context, agent)
 
-    def _restore_execution_context(
+    def restore_execution_context(
             self,
             runtime_context: RuntimeContext,
             agent: BaseAgent,

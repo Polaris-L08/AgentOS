@@ -89,13 +89,17 @@ class CheckpointCoordinator:
                     f"Agent not found: {agent_id}"
                 )
 
-            context = AgentExecutionContext(
+            if agent_checkpoint.agent_id != agent.identity.agent_id:
+                raise ValueError(
+                    "Agent checkpoint identity mismatch: "
+                    f"checkpoint={agent_checkpoint.agent_id}, "
+                    f"agent={agent.identity.agent_id}"
+                )
+
+            context = AgentExecutionContext.restore(
                 runtime_context=runtime_context,
-                agent_identity=agent.identity,
-                agent_context=agent.context,
-                memory=agent.memory,
-                state=deepcopy(agent_checkpoint.state),
-                loop=deepcopy(agent_checkpoint.loop),
+                agent=agent,
+                checkpoint=agent_checkpoint
             )
 
             contexts[agent_id] = context
