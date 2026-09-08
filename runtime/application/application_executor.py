@@ -7,6 +7,8 @@ from models.task_result import TaskResult
 from runtime.application.application_lifecycle import (
     ApplicationLifecycleError,
 )
+from runtime.checkpoint import Checkpoint
+from runtime.execution import ExecutionHandle
 from runtime.execution.execution_runtime import ExecutionRuntime
 
 
@@ -17,15 +19,21 @@ class ApplicationExecutor:
     This class hides low-level execution lifecycle details from the
     public Application API.
 
-    Current Phase 12 behavior:
-    - create one Execution
-    - select one default Agent
-    - invoke that Agent through AgentApplication
-    - close the Execution
+    Coordinates Application-level execution lifecycle.
 
-    Future versions may replace the default-agent path with a
-    Supervisor / Workflow execution orchestrator without changing
-    AgentApplication.execute().
+    ApplicationExecutor owns ExecutionHandle lifecycle.
+
+    Responsibilities:
+        - create ExecutionHandle for normal execution
+        - recover ExecutionHandle from Checkpoint
+        - close ExecutionHandle after execution
+
+    ApplicationExecutor does NOT own:
+        - Checkpoint persistence
+        - AgentContext
+        - MemoryRuntime
+        - Agent scheduling
+        - Workflow decisions
     """
 
     def __init__(
@@ -40,6 +48,11 @@ class ApplicationExecutor:
         self,
         task: TaskRequest,
     ):
+        """
+        Execute a new Application task.
+
+        ExecutionHandle is always closed in finally.
+        """
         execution_handle = self._execution_runtime.create_execution()
 
         try:
@@ -54,6 +67,25 @@ class ApplicationExecutor:
             return self._to_task_result(task, agent, agent_result)
         finally:
             await execution_handle.close()
+
+    async def recover_execution(
+            self,
+            checkpoint: Checkpoint,
+    ) -> ExecutionHandle:
+        """
+        Recover an existing Execution from a Checkpoint.
+
+        This method reconstructs the ExecutionHandle but does not
+        execute an Agent yet.
+
+        The caller owns the returned handle and is responsible for
+        closing it.
+
+        This method is intentionally internal to the Application
+        execution layer. It is not the final public Application
+        recovery API.
+        """
+        return self._execution_runtime.resume_execution(checkpoint)
 
     def _select_default_agent(self) -> BaseAgent:
         agents = self._application.agents

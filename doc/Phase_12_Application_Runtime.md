@@ -1582,3 +1582,77 @@ ResearchAgent instance
 > 把AgentExecutionContext的创建/恢复统一收敛到AgentRuntime。
 
 但是Recovery API 暂时不要暴露给Application。
+
+### Lesson12-D: Application Recovery Entry Point
+
+> Application 正式进入 Recovery 流程。
+
+明确语义：
+
+```text
+execute()
+    = 创建一次新的 Execution
+
+recover()
+    = 从 Durable Checkpoint 恢复一次已有 Execution
+```
+
+Application的公开API：
+
+```text
+await application.execute(task)
+
+和
+
+await application.recover(checkpoint)
+```
+
+#### 本课采用“两层 Recovery”
+
+第一层： Application.recover() 负责：
+
+> 恢复Execution。
+
+第二层： ApplicationExecutor 负责：
+
+> 管理 recovered ExecutionHandle 的生命周期。
+
+Agent 如何恢复、从哪个 Agent 继续，则暂时留给后面的 Workflow/Supervisor。
+
+#### ApplicationExecutor 增加 Recovery 能力
+
+现在的正常执行流程为：
+
+```text
+Application.execute()
+        ↓
+ApplicationExecutor.execute()
+        ↓
+ExecutionRuntime.create_execution()
+        ↓
+ExecutionHandle
+        ↓
+Agent
+        ↓
+TaskResult
+        ↓
+finally close()
+```
+
+Recovery 增加：
+
+```text
+Application.recover()
+        ↓
+ApplicationExecutor.recover()
+        ↓
+ExecutionRuntime.resume_execution()
+        ↓
+ExecutionHandle
+        ↓
+[后续恢复逻辑]
+        ↓
+finally close()
+```
+
+> ExecutionHandle 的生命周期仍然由 ApplicationExecutor 管理。
