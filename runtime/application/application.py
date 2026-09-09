@@ -195,10 +195,8 @@ class AgentApplication:
         """
         self._require_state(ApplicationState.RUNNING)
 
-        # A RuntimeContext does not exist before ExecutionRuntime creates
-        # an ExecutionHandle. Therefore, Application-level middleware for
-        # the execute operation will be introduced around the actual
-        # execution context in a later refinement.
+        self._validate_task_session(task)
+
         return await self._executor.execute(task)
 
     # ------------------------------------------------------------------
@@ -245,6 +243,26 @@ class AgentApplication:
         """
 
         return agent_id in self._agents
+
+    # ------------------------------------------------------------------
+    # Session validation
+    # ------------------------------------------------------------------
+    def _validate_task_session(self, task: TaskRequest) -> None:
+        """
+        Validate the Session referenced by a TaskRequest.
+
+        A task without a session_id is a valid stateless execution.
+
+        When a session_id is provided, the Session must be owned by
+        this Application.
+        """
+        if task.session_id is None:
+            return
+
+        if not self.session_manager.has_session(task.session_id):
+            raise KeyError(
+                f"Session not found: {task.session_id}"
+            )
 
     # ------------------------------------------------------------------
     # Session

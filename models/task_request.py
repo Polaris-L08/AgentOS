@@ -5,3 +5,4 @@ from dataclasses import dataclass
 class TaskRequest:
     task_id: str
     user_input: str
+    session_id: str | None = None

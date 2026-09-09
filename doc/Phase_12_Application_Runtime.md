@@ -1742,3 +1742,120 @@ Agent完全不知道是normal还是recovery。
                          ▼
                        final
 ```
+
+
+## Lesson 13: Session × Execution Integration
+
+### 本课目标
+
+完成：
+
+```text
+TaskRequest
+    │
+    └── optional session_id
+             │
+             ▼
+       AgentApplication
+             │
+             ├── validate Session ownership
+             │
+             ▼
+       ApplicationExecutor
+             │
+             ▼
+       ExecutionRuntime
+             │
+             ▼
+        ExecutionHandle
+```
+
+同时保持：
+
+```text
+Session
+  ✗ 不拥有 ExecutionRuntime
+  ✗ 不拥有 RuntimeContext
+  ✗ 不执行 Agent
+  ✗ 不管理 AgentExecutionContext
+```
+
+### 最终设计
+
+```text
+Application
+│
+├── SessionManager
+│      │
+│      ├── Session A
+│      └── Session B
+│
+└── ExecutionRuntime
+       │
+       ├── Execution 1
+       ├── Execution 2
+       └── Execution 3
+```
+
+逻辑关系：
+
+```text
+Session A
+   │
+   ├── Task 1 → Execution 1
+   ├── Task 2 → Execution 2
+   └── Task 3 → Execution 3
+```
+
+### Lesson 13 的最终架构结论
+
+本课真正建立的是下面这个生命周期模型：
+
+```text
+Application
+    │
+    │ owns
+    ▼
+Session
+    │
+    │ logically groups
+    ▼
+Execution
+    │
+    │ owns runtime boundary
+    ▼
+RuntimeContext
+    │
+    │ creates agent execution boundaries
+    ▼
+AgentExecutionContext
+    │
+    │ references live Agent state
+    ▼
+AgentContext + MemoryRuntime
+```
+
+因此：
+
+```text
+Application
+    = Application Lifecycle / Composition
+
+Session
+    = Logical Interaction Boundary
+
+Execution
+    = Durable Execution Boundary
+
+RuntimeContext
+    = Execution Runtime Context
+
+AgentExecutionContext
+    = Agent Invocation Context
+
+AgentContext
+    = Agent Instance Context
+
+MemoryRuntime
+    = Agent-owned Memory Capability
+```
