@@ -2429,3 +2429,107 @@ recovered_handle.execution_id
 **Q8：AgentContext 和 MemoryRuntime 是否从 Checkpoint 反序列化？**
 
 不。 它们来自当前仍然存在的 live Agent。
+
+
+## Lesson 17：Final Integration & Acceptance
+
+### 验收目标
+
+| AC   | 验收内容                             |
+|------|----------------------------------|
+| AC-1 | Application Assembly             |
+| AC-2 | Application Lifecycle            |
+| AC-3 | Application Execution            |
+| AC-4 | Session × Execution              |
+| AC-5 | Execution Recovery               |
+| AC-6 | Agent Execution Context Recovery |
+| AC-7 | Application Integration Boundary |
+| AC-8 | Full Phase12 Integration         |
+
+### 最终架构
+
+```text
+                         User
+                          │
+                          ▼
+                    TaskRequest
+                          │
+                          ▼
+                 ┌────────────────┐
+                 │ AgentApplication│
+                 └───────┬────────┘
+                         │
+             ┌───────────┼────────────┐
+             │           │            │
+             ▼           ▼            ▼
+          Session     Executor     Components
+                         │
+                         ▼
+                ExecutionRuntime
+                         │
+                         ▼
+                  ExecutionHandle
+                         │
+                         ▼
+                   RuntimeContext
+                    │          │
+                    ▼          ▼
+               SharedContext  Trace
+                    │
+                    ▼
+              invoke_agent()
+                    │
+                    ▼
+                AgentRuntime
+                    │
+                    ▼
+          AgentExecutionContext
+             │               │
+             ▼               ▼
+           State           Loop
+             │
+             ▼
+       AgentContext / Memory
+```
+
+恢复：
+
+```text
+Checkpoint
+     │
+     ▼
+ApplicationExecutor
+     │
+     ▼
+ExecutionRuntime.resume_execution()
+     │
+     ▼
+ExecutionHandle
+     │
+     ├── same runtime_id
+     ├── new trace
+     └── restored SharedContext
+              │
+              ▼
+         AgentRuntime
+              │
+              ▼
+    restored AgentExecutionContext
+```
+
+### 测试覆盖
+
+| Test                                                                   | Acceptance Criteria |
+|------------------------------------------------------------------------|---------------------|
+| `test_phase12_application_assembly_and_lifecycle`                      | AC-1 / AC-2         |
+| `test_phase12_application_execute_returns_task_result`                 | AC-3                |
+| `test_phase12_session_can_be_reused_by_multiple_executions`            | AC-4                |
+| `test_phase12_unknown_session_is_rejected_before_agent_execution`      | AC-4                |
+| `test_phase12_session_belongs_to_its_application`                      | AC-4                |
+| `test_phase12_execution_recovery_preserves_execution_identity`         | AC-5                |
+| `test_phase12_execution_recovery_creates_new_trace`                    | AC-5                |
+| `test_phase12_execution_recovery_restores_shared_context`              | AC-5                |
+| `test_phase12_agent_checkpoint_restores_execution_state_on_live_agent` | AC-6                |
+| `test_phase12_application_middleware_wraps_agent_invocation`           | AC-7                |
+| `test_phase12_application_lifecycle_events_are_published`              | AC-7                |
+| `test_phase12_full_application_runtime_acceptance`                     | AC-8                |
