@@ -1042,8 +1042,6 @@ RuntimeComponent.invoke() 是Runtime Middleware的统一入口。
 > Application-level operation
 
 
-
-
 ## Lesson 9: Application Configuration + Assembly
 
 本节目标：
@@ -2151,3 +2149,190 @@ ApplicationComponent
 ```
 
 没有把 Application Lifecycle 和 Runtime Operation Boundary 混在一起。
+
+
+## Lesson 15: Application Runtime Integration
+
+### 问题
+
+到 Lesson14 为止，我们已经证明：
+
+**Application 可以组装**
+
+```text
+Agent
+ExecutionRuntime
+SessionManager
+EventPublisher
+MiddlewareChain
+```
+
+**Application 可以启动**
+
+```text
+CREATED
+    ↓
+INITIALIZED
+    ↓
+RUNNING
+```
+
+**Application 可以执行**
+
+```text
+await application.execute(task)
+```
+
+**Application 可以恢复 Execution**
+
+```text
+Checkpoint
+    ↓
+ExecutionRuntime.resume_execution()
+    ↓
+ExecutionHandle
+```
+
+**Application 可以使用 Session**
+
+```text
+Session
+    ↓
+Execution
+```
+
+**Application 可以协调 Middleware/Event**
+
+```text
+Application Middleware
+        ↓
+AgentRuntime
+        ↓
+Agent Middleware
+```
+
+因此 Lesson15 不应该再创建新组件。 而应该回答：
+
+> 这些东西放在一起以后，整个 Application Runtime 是否形成了一个完整、闭合、没有职责泄漏的执行边界？
+
+### Lesson15 的 Architecture Test
+
+```text
+                    AgentApplication
+                           │
+                 application.execute()
+                           │
+                           ▼
+                 Session Validation
+                           │
+                           ▼
+                 ApplicationExecutor
+                           │
+                           ▼
+                 ExecutionRuntime
+                           │
+                           ▼
+                    ExecutionHandle
+                           │
+                           ▼
+                    RuntimeContext
+                           │
+                           ▼
+             Application.invoke_agent()
+                           │
+                  Application Middleware
+                           │
+                           ▼
+                  AgentRuntime.execute()
+                           │
+                    Agent Middleware
+                           │
+                           ▼
+                        Agent
+                           │
+                           ▼
+                     AgentResult
+                           │
+                           ▼
+                    TaskResult
+                           │
+                           ▼
+                  ExecutionHandle.close()
+```
+
+### 六个验证场景
+
+1. 完整执行链
+
+    ```text
+    Application.execute()
+        ↓
+    Agent
+        ↓
+    TaskResult
+    ```
+
+2. RuntimeContext 一致性
+
+    Application Middleware 和 AgentExecutionContext 必须看到同一个： `RuntimeContext`
+
+3. Session × Execution
+
+    同一个 Session：
+    
+    ```text
+    Session
+     ├── Execution 1
+     └── Execution 2
+    ```
+    
+    但两个 Execution 必须拥有不同的：
+    
+    ```text
+    runtime_id
+    RuntimeContext
+    ```
+
+4. Session Boundary
+
+    未知 Session 必须在 Agent 执行之前被拒绝。
+
+5. Failure Boundary
+
+    Agent 抛异常：
+
+    ```text
+    Agent
+     ↓
+    Exception
+     ↓
+    Application Middleware.on_error
+     ↓
+    Exception propagate
+     ↓
+    ExecutionHandle.close()
+    ```
+   
+    同时 Application 仍然： `RUNNING`
+
+6. Event Integration
+
+    一次正常执行应该至少形成：
+    
+    ```text
+    application.started
+    agent.started
+    agent.completed
+    application.stopped
+    ```
+    
+    这样我们真正验证了：
+    
+    ```text
+    Application Event
+    +
+    Agent Event
+    ```
+    
+    可以在同一个 Application Runtime 中协同工作。
+
