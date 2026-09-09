@@ -91,6 +91,7 @@ class ApplicationAssembly:
             session_manager=session_manager,
             publisher=publisher,
             middleware_chain=middleware,
+            components=self._components.items(),
         )
 
         return application

@@ -73,5 +73,14 @@ class ComponentRegistry:
     def __contains__(self, name: str) -> bool:
         return self.contains(name)
 
+    def items(self) -> tuple[tuple[str, Any], ...]:
+        """
+        Return a read-only snapshot of registered components.
+
+        Dict insertion order is preserved so Application lifecycle
+        orchestration is deterministic.
+        """
+        return tuple(self._components.items())
+
     def __len__(self) -> int:
         return len(self._components)

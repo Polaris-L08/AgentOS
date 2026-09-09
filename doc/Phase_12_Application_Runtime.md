@@ -1859,3 +1859,295 @@ AgentContext
 MemoryRuntime
     = Agent-owned Memory Capability
 ```
+
+
+## Lesson 14：Application Component Lifecycle Orchestration
+
+### 本节目标
+
+当前生命周期只是：
+
+```text
+Application.initialize()
+        ↓
+修改 ApplicationState
+
+Application.stop()
+        ↓
+_shutdown_components()
+        ↓
+目前实际上什么也不做
+```
+
+> 建立 Application Component Lifecycle
+
+### 生命周期顺序
+
+**Initialize**：
+
+按照Assembly注册顺序：
+ 
+```text
+A.initialize()
+        ↓
+B.initialize()
+        ↓
+C.initialize()
+```
+
+**Start**:
+
+同样按照初始化顺序：
+
+```text
+A.start()
+        ↓
+B.start()
+        ↓
+C.start()
+```
+
+**Stop**:
+
+必须反向：
+
+```text
+C.stop()
+        ↓
+B.stop()
+        ↓
+A.stop()
+```
+
+即：
+
+```text
+initialize: A → B → C
+
+start:      A → B → C
+
+stop:       C → B → A
+```
+
+### 失败语义
+
+**initialize 失败**：
+
+例如：
+
+```text
+A.initialize() ✓
+B.initialize() ✗
+```
+
+那么 B 没有成功初始化，因此不 rollback
+
+而 A 已经成功初始化，因此： A.stop() 进行cleanup，
+
+最终： Application = CREATED ，因为Application尚未成功完成初始化。
+
+**start失败**：
+
+例如：
+
+A.start() ✓
+B.start() ✗
+
+那么： A.stop() 进行 rollback。
+
+最终：
+
+Application = INITIALIZED
+
+这样可以重新：
+
+application.start()
+
+而不需要重新：
+
+application.initialize()
+
+这是一个很有价值的设计。
+
+**stop失败**：
+
+继续保持 Lesson11 已经确定的语义：
+
+```text
+RUNNING
+   ↓
+STOPPING
+   ↓
+stop failure
+```
+
+最终： STOPPING 不能假装已经：
+
+STOPPED
+
+这与之前的 Phase12 生命周期设计保持一致。
+
+### 生命周期架构图
+
+```text
+Application
+│
+├── Lifecycle
+│     │
+│     ├── initialize()
+│     ├── start()
+│     └── stop()
+│
+├── Components
+│     │
+│     ├── AgentRuntime
+│     ├── ExecutionRuntime
+│     ├── SessionManager
+│     └── ...
+│
+└── Agents
+```
+
+### 与Execution Lifecycle的区别
+
+**Application Lifecycle**
+
+```
+CREATED
+   ↓
+INITIALIZED
+   ↓
+RUNNING
+   ↓
+STOPPING
+   ↓
+STOPPED
+```
+
+**Execution Lifecycle**
+
+```text
+create_execution()
+       ↓
+ExecutionHandle
+       ↓
+Agent execution
+       ↓
+close()
+```
+
+**Agent Invocation Lifecycle**
+
+```text
+AgentRuntime.execute()
+       ↓
+AgentExecutionContext
+       ↓
+Agent
+       ↓
+AgentResult
+```
+
+### 需要特别强调的设计结果
+
+到这里，AgentOS 已经出现了三个非常清晰的 Ownership Boundary：
+
+```text
+Application
+    owns
+    ↓
+Application Components
+```
+
+```text
+ExecutionRuntime
+    owns
+    ↓
+ExecutionHandle / RuntimeContext
+```
+
+```text
+Agent
+    owns
+    ↓
+AgentContext / MemoryRuntime
+```
+
+因此：
+
+```text
+Application
+   ↓
+Component lifecycle
+
+ExecutionRuntime
+   ↓
+Execution lifecycle
+
+AgentRuntime
+   ↓
+Agent invocation
+
+Agent
+   ↓
+Decision / Capability
+```
+
+### Lesson 14 小结
+
+> Application 不再只是“拥有组件”，而开始真正负责这些组件的 Application-level lifecycle orchestration。
+
+建立： `ApplicationComponent` 并实现：
+
+```text
+initialize
+start
+stop
+```
+
+生命周期：
+
+```text
+Initialize:
+A → B → C
+
+Start:
+A → B → C
+
+Stop:
+C → B → A
+```
+
+失败恢复：
+
+```text
+initialize failure
+    ↓
+rollback initialized components
+    ↓
+CREATED
+```
+
+```text
+start failure
+    ↓
+rollback started components
+    ↓
+INITIALIZED
+```
+
+```text
+stop failure
+    ↓
+STOPPING
+```
+
+同时保持：
+
+```text
+RuntimeComponent
+        ≠
+ApplicationComponent
+```
+
+没有把 Application Lifecycle 和 Runtime Operation Boundary 混在一起。
