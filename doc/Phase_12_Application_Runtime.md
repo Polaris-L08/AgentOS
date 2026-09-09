@@ -2336,3 +2336,96 @@ Agent Middleware
     
     可以在同一个 Application Runtime 中协同工作。
 
+
+## Lesson 16: Application-level Recovery Integration
+
+先把边界冻结下来：
+
+> Lesson16 不是重新实现 Checkpoint、ExecutionRuntime Recovery 或 AgentRuntime Restore。
+> 
+> 这些能力在 Lesson12-B / 12-C / 12-D 已经完成。本课要做的是把它们提升到 Application Runtime 的 Recovery Boundary（应用级恢复边界），
+> 验证 Application 能否从一个完整 Execution 的 Checkpoint 恢复，并继续进入 Agent/Workflow 执行。
+
+### 测试覆盖什么
+
+| **测试**                                                           | **验证**                                   |
+|------------------------------------------------------------------|------------------------------------------|
+| `test_application_executor_recovers_execution_handle`            | ApplicationExecutor 能接入 Recovery         |
+| `test_application_recovery_preserves_execution_identity`         | `runtime_id` 保持                          |
+| `test_application_recovery_creates_new_trace`                    | Recovery 创建新的 Trace                      |
+| `test_application_recovery_restores_shared_context`              | SharedContext 恢复                         |
+| `test_application_recovered_execution_can_restore_agent_context` | Execution Recovery 与 Agent Recovery 可以组合 |
+| `test_application_recovered_execution_handle_can_be_closed`      | Recovery 后 Execution 生命周期正确关闭            |
+
+完整链路是：
+
+```text
+Checkpoint
+    │
+    ▼
+ApplicationExecutor.recover_execution()
+    │
+    ▼
+ExecutionRuntime.resume_execution()
+    │
+    ▼
+ExecutionHandle
+    │
+    ├── runtime_id = original runtime_id
+    ├── trace_id   = new trace_id
+    └── SharedContext restored
+            │
+            ▼
+      AgentCheckpoint
+            │
+            ▼
+      AgentRuntime
+            │
+            ▼
+   AgentExecutionContext
+            │
+            ├── state ← checkpoint
+            ├── loop  ← checkpoint
+            ├── AgentContext ← live Agent
+            └── MemoryRuntime ← live Agent
+```
+
+### Lesson 16 完成标准
+
+**Q1：谁创建新的 Execution？**
+
+`ExecutionRuntime.create_execution()`
+
+**Q2：谁恢复已有 Execution？**
+
+`ExecutionRuntime.resume_execution(checkpoint)`
+
+**Q3：Application 如何接入 Recovery？**
+
+`ApplicationExecutor.recover_execution(checkpoint)`
+
+**Q4：Recovery 后 Execution ID 是否变化？**
+
+不变。
+
+```text
+checkpoint.runtime_id
+        ==
+recovered_handle.execution_id
+```
+
+**Q5：Trace ID 是否变化？**
+
+变化。 因为 Recovery 是一个新的运行生命周期/trace lifecycle。
+
+**Q6：谁恢复 AgentExecutionContext？**
+
+`AgentRuntime`
+
+**Q7：谁决定恢复哪个 Agent？**
+
+未来 Workflow / Supervisor。 不是 Application。
+
+**Q8：AgentContext 和 MemoryRuntime 是否从 Checkpoint 反序列化？**
+
+不。 它们来自当前仍然存在的 live Agent。
