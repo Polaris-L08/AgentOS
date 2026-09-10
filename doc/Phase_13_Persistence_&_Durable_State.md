@@ -257,3 +257,273 @@ ExecutionState
 > runtime_id 属于当前 Live Runtime，而 execution_id 属于 Logical Execution。
 
 如果现在把 `runtime_id` 放进 `ExecutionState`，实际上又把 Logical Execution 和 Live Runtime 绑死了。
+
+
+## Lesson 3: Execution ↔ Checkpoint
+
+### execution_id 和 runtime_id
+
+| 对象             | ID              | 意义                     |
+|----------------|-----------------|------------------------|
+| Execution      | `execution_id`  | 逻辑执行是谁                 |
+| RuntimeContext | `runtime_id`    | 这个 Runtime Context 的身份 |
+| Checkpoint     | `checkpoint_id` | 某一次执行快照是谁              |
+| Trace          | `trace_id`      | 某一次 Trace 是谁           |
+
+### ExecutionState 和 Checkpoint 不应该合并
+
+**ExecutionState**
+
+回答： 这个 Execution 现在处于什么生命周期状态？
+
+例如：
+
+```text
+execution_id = E123
+status       = PAUSED
+task_id      = T001
+session_id   = S001
+```
+
+它属于： `Logical Execution`
+
+**Checkpoint**
+
+回答： 这个 Execution 执行到哪里了？恢复它需要哪些 Runtime Execution State？
+
+当前已有：
+
+```text
+checkpoint_id
+runtime_id
+shared_context
+agents
+task_id
+```
+
+其中：
+
+```text
+shared_context
+agents
+```
+
+是恢复真正执行所需要的数据。
+
+### Lesson 3 总结
+
+```text
+                Execution
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+  ExecutionState          Checkpoint
+  logical state           progress snapshot
+          │                   │
+ execution_id             runtime_id
+ status                   shared_context
+ lifecycle                agent states
+```
+
+以及：
+
+```text
+Execution
+    ↓
+snapshot()
+    ↓
+ExecutionState
+```
+
+恢复Runtime：
+
+```text
+Checkpoint
+    ↓
+ExecutionRuntime
+    ↓
+RuntimeContext
+    ↓
+SAME runtime_id
+```
+
+
+## Lesson 4: Session Persistence Model
+
+### Session 和 Execution 的关系
+
+进入 Phase13 后，我们现在有：
+
+```text
+Session
+    │
+    ├── Execution E001
+    ├── Execution E002
+    └── Execution E003
+```
+
+所以：
+
+```text
+Session
+    = Conversation / Interaction Boundary
+
+Execution
+    = One logical execution inside that Session
+```
+
+例如：
+
+```text
+Session S001
+│
+├── Execution E001
+│     "分析 NVIDIA"
+│
+├── Execution E002
+│     "再分析一下风险"
+│
+└── Execution E003
+      "给我最终结论"
+```
+
+因此：
+
+> Session 不应该等价于 Execution。
+
+### Session 需要持久化什么？
+
+当前 Session 只有：
+
+```text
+session_id
+created_at
+metadata
+```
+
+因此 Lesson4 我们先保持这个边界。
+
+Durable State：
+
+```text
+SessionState
+├── session_id
+├── created_at
+└── metadata
+```
+
+而不应该包含：
+
+```text
+RuntimeContext
+ExecutionRuntime
+ExecutionHandle
+AgentExecutionContext
+asyncio.Task
+Middleware Chain
+Trace
+EventBus
+```
+
+这些都是 **Live Runtime Object**。
+
+### 架构结果
+
+```text
+┌──────────────────────┐
+│       Session        │
+│   Live Object        │
+├──────────────────────┤
+│ session_id           │
+│ created_at            │
+│ metadata             │
+└──────────┬───────────┘
+           │
+       snapshot()
+           │
+           ▼
+┌──────────────────────┐
+│    SessionState      │
+│   Durable State      │
+├──────────────────────┤
+│ session_id           │
+│ created_at            │
+│ metadata             │
+└──────────────────────┘
+```
+
+```text
+                     Session
+                        │
+                        │
+                  SessionState
+                        │
+                        │
+              ┌─────────┴─────────┐
+              │                   │
+        Execution E001       Execution E002
+              │
+              ├── ExecutionState
+              │
+              └── Checkpoint(s)
+                       │
+                       │
+                 runtime_id
+                       │
+                       ▼
+                RuntimeContext
+```
+
+**Session 不拥有 RuntimeContext。**
+
+**ExecutionState 不等于 Checkpoint。**
+
+**Checkpoint 不等于 RuntimeContext。**
+
+**Durable State 不等于 Live Runtime Object。**
+
+### 本科总结
+
+我们现在正式建立了第二组 Durable State：
+
+```text
+Session
+   ↕
+SessionState
+```
+
+加上上一课：
+
+```text
+Execution
+   ↕
+ExecutionState
+```
+
+并明确：
+
+`Checkpoint`
+
+仍然独立存在，用于保存 恢复执行所需的进度状态。
+
+所以 Phase13 当前核心结构是：
+
+```text
+Live Object
+     │
+     │ snapshot()
+     ▼
+Durable State
+     │
+     │ Persistence
+     ▼
+Durable Storage
+     │
+     │ load
+     ▼
+Durable State
+     │
+     │ from_state()
+     ▼
+Live Object
+```

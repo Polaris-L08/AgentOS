@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from runtime.session.session_state import SessionState
+
 
 @dataclass(slots=True)
 class Session:
@@ -33,3 +35,24 @@ class Session:
     metadata: dict[str, Any] = field(
         default_factory=dict
     )
+
+    def snapshot(self) -> SessionState:
+        """
+        Create a durable representation of this Session.
+        """
+        return SessionState(
+            session_id=self.session_id,
+            created_at=self.created_at,
+            metadata=dict(self.metadata),
+        )
+
+    @classmethod
+    def from_state(cls, state: SessionState) -> Session:
+        """
+        Reconstruct a live Session object from durable state.
+        """
+        return cls(
+            session_id=state.session_id,
+            created_at=state.created_at,
+            metadata=dict(state.metadata),
+        )
