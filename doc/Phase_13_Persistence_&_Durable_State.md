@@ -527,3 +527,98 @@ Durable State
      ▼
 Live Object
 ```
+
+
+## Lesson 5： Persistence Contracts
+
+### 完成后的整体架构
+
+```text
+┌─────────────────────────────────────┐
+│           Live Domain               │
+│                                     │
+│  Session        Execution           │
+└───────────────┬─────────────────────┘
+                │
+            snapshot()
+                │
+                ▼
+┌─────────────────────────────────────┐
+│          Durable State              │
+│                                     │
+│ SessionState   ExecutionState       │
+│                                     │
+│ Checkpoint                         │
+└───────────────┬─────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────┐
+│       Persistence Contracts         │
+│                                     │
+│ SessionStore                        │
+│ ExecutionStore                      │
+│ CheckpointStore                     │
+└───────────────┬─────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────┐
+│       Persistence Implementations   │
+│                                     │
+│ In-Memory        PostgreSQL          │
+│                  Adapter             │
+└─────────────────────────────────────┘
+```
+
+### Lesson 5 总结
+
+这一课最重要的不是增加多少代码，而是正式确定：
+
+> Persistence 是一个 Boundary，而不是 Runtime 的一部分。
+
+我们现在有：
+
+```text
+Session
+   ↓
+SessionState
+   ↓
+SessionStore
+```
+
+```text
+Execution
+   ↓
+ExecutionState
+   ↓
+ExecutionStore
+```
+
+以及已有：
+
+```text
+Checkpoint
+   ↓
+CheckpointStore
+```
+
+同时明确：
+
+`ExecutionStore ≠ CheckpointStore`
+
+以及：
+
+`Cancelled ≠ Deleted`
+
+更重要的是：
+
+```text
+Runtime Core
+      ↓
+Persistence Contract
+      ↓
+Adapter
+      ↓
+PostgreSQL
+```
+
+而不是 Runtime 直接连接数据库。
