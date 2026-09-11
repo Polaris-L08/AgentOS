@@ -10,7 +10,8 @@ from runtime.events.event import Event
 from runtime.events.publisher import EventPublisher
 from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
-from runtime.session import SessionManager, Session
+from runtime.persistence import SessionStore, ExecutionStore, InMemorySessionStore, InMemoryExecutionStore
+from runtime.session import SessionManager, Session, SessionState
 
 if TYPE_CHECKING:
     from agents.base_agent import BaseAgent
@@ -46,7 +47,9 @@ class AgentApplication:
             session_manager: SessionManager | None = None,
             publisher: EventPublisher | None = None,
             middleware_chain: MiddlewareChain | None = None,
-            components: tuple[tuple[str, Any],...] | None = None
+            components: tuple[tuple[str, Any],...] | None = None,
+            session_store: SessionStore | None = None,
+            execution_store: ExecutionStore | None = None,
     ) -> None:
         self.application_id = application_id
         self.name = name
@@ -54,6 +57,9 @@ class AgentApplication:
         self.execution_runtime = execution_runtime
 
         self.session_manager = session_manager or SessionManager()
+
+        self.session_store = session_store or InMemorySessionStore()
+        self.execution_store = execution_store or InMemoryExecutionStore()
 
         self._publisher = publisher
         self._middleware_chain = middleware_chain
@@ -352,6 +358,23 @@ class AgentApplication:
             session_id
         )
 
+    async def persist_session(self, session_id: str) -> SessionState:
+        """
+        Persist an existing Session.
+
+        The live Session remains owned by SessionManager.
+        Persistence stores its durable representation only.
+        """
+        self._require_state(ApplicationState.RUNNING)
+
+        session = self.session_manager.get_session(session_id)
+
+        state = session.snapshot()
+
+        await self.session_store.save(state)
+
+        return state
+
     # ------------------------------------------------------------------
     # Agent invocation
     # ------------------------------------------------------------------
@@ -556,16 +579,10 @@ class AgentApplication:
 
     def _require_state(self, expected: ApplicationState) -> None:
         """
-        Require the Application to be in the expected state.
-
-        Raises:
-            ApplicationLifecycleError:
-                If the requested lifecycle operation is invalid.
+        Validate the current Application lifecycle state.
         """
-
-        if self._state is not expected:
+        if self._state != expected:
             raise ApplicationLifecycleError(
-                f"Invalid Application lifecycle state: "
-                f"expected '{expected.value}', "
-                f"actual '{self._state.value}'."
+                f"Application is in state '{self._state.value}', "
+                f"expected '{expected.value}'."
             )

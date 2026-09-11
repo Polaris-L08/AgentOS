@@ -796,3 +796,145 @@ Durable State / Snapshot
    Memory       PostgreSQL
 ```
 
+
+## Lesson 7: Persistence Integration
+
+### 本课目标
+
+本课要建立第一条真正的 Application Runtime 链路：
+
+```text
+Application
+    │
+    ├── Session
+    │      ↓ snapshot()
+    │   SessionState
+    │      ↓
+    │   SessionStore
+    │
+    └── Execution
+           ↓ snapshot()
+        ExecutionState
+           ↓
+        ExecutionStore
+```
+
+注意：
+
+> 本课不是把所有 Runtime Object 都持久化。
+
+尤其不能出现：
+
+```text
+RuntimeContext → DB
+ExecutionHandle → DB
+AgentExecutionContext → DB
+Trace → DB
+asyncio.Task → DB
+```
+
+这些仍然属于 Live Runtime。
+
+### 设计原则
+
+> Persistence 是 Application 的可配置能力。
+
+应该是：
+
+```text
+AgentApplication
+      │
+      ├── SessionStore
+      │
+      └── ExecutionStore
+```
+
+Store是依赖注入的。例如：
+
+```text
+开发 / 测试
+
+Application
+ ├── InMemorySessionStore
+ └── InMemoryExecutionStore
+```
+
+```text
+生产环境
+
+Application
+ ├── PostgreSQLSessionStore
+ └── PostgreSQLExecutionStore
+```
+
+### 最终执行链
+
+```text
+    AgentApplication
+           │
+           │ execute()
+           ▼
+       ApplicationExecutor
+           │
+           │ create logical Execution
+           ▼
+       Execution
+           │
+           │ snapshot()
+           ▼
+     ExecutionState
+           │
+           │ save()
+           ▼
+     ExecutionStore
+           │
+    InMemory / PostgreSQL
+```
+
+真正运行 Agent 的链路仍然完全没有改变：
+
+```text
+ApplicationExecutor
+       │
+       │ ExecutionRuntime.create_execution()
+       ▼
+ExecutionHandle
+       │
+       ▼
+RuntimeContext
+       │
+       ▼
+Application.invoke_agent()
+       │
+       ▼
+AgentRuntime
+       │
+       ▼
+Agent
+```
+
+### Lesson 7 总结
+
+Lesson7 真正建立的是 Application 与 Persistence Contract 之间的连接，而不是数据库实现。
+
+核心边界现在变成：
+
+```text
+Live Object
+    ↓
+snapshot()
+    ↓
+Durable State
+    ↓
+Store
+```
+
+并且我们正式让：
+
+`Execution`
+
+成为 Application 层可以识别的 Logical Execution Object，但没有让它取代：
+
+`ExecutionHandle`
+
+也没有把它变成 Database Entity。

@@ -73,14 +73,29 @@ class ApplicationAssembly:
 
             - agent_runtime
             - execution_runtime
+
+        Optional components:
+
+            - publisher
+            - middleware
+            - session_manager
+            - session_store
+            - execution_store
         """
 
-        agent_runtime = self._get_required_component("agent_runtime")
-        execution_runtime = self._get_required_component("execution_runtime")
+        self._get_required_component("agent_runtime")
+
+        self._get_required_component("execution_runtime")
 
         publisher = self._get_optional_component("publisher")
+
         middleware = self._get_optional_component("middleware")
+
         session_manager = self._get_optional_component("session_manager")
+
+        session_store = self._get_optional_component("session_store")
+
+        execution_store = self._get_optional_component("execution_store")
 
         application = AgentApplication(
             application_id=self._config.application_id,
@@ -92,6 +107,8 @@ class ApplicationAssembly:
             publisher=publisher,
             middleware_chain=middleware,
             components=self._components.items(),
+            session_store=session_store,
+            execution_store=execution_store,
         )
 
         return application
