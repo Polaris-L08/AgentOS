@@ -622,3 +622,177 @@ PostgreSQL
 ```
 
 而不是 Runtime 直接连接数据库。
+
+
+## Lesson 6: In-Memory Persistence
+
+本课目标：
+
+```text
+SessionState
+      ↓
+InMemorySessionStore
+
+ExecutionState
+      ↓
+InMemoryExecutionStore
+```
+
+并验证：
+
+```text
+save
+load
+replace
+delete
+missing record
+state isolation
+```
+
+### 重要原则： Store 保存 Durable State，而不是 Live Object
+
+我们不会设计：
+
+`store.save(session)`
+
+而是：
+
+`store.save(session.snapshot())`
+
+也就是：
+
+```text
+Session
+   ↓
+snapshot()
+   ↓
+SessionState
+   ↓
+InMemorySessionStore
+```
+
+Execution 同样：
+
+```text
+Execution
+   ↓
+snapshot()
+   ↓
+ExecutionState
+   ↓
+InMemoryExecutionStore
+```
+
+因此 Store 永远不知道：
+
+```text
+Session
+Execution
+RuntimeContext
+ExecutionRuntime
+```
+
+它只知道 Durable State。
+
+### 本课真正建立的不是两个字典
+
+表面上我们只是实现了：
+
+`self._states: dict[str, State]`
+
+但实际上我们建立了一个非常重要的 Persistence 语义：
+
+```text
+save(State)
+    ↓
+Store owns a copy
+
+load(id)
+    ↓
+Caller receives a copy
+```
+
+也就是：
+
+> Persistence Boundary 不共享 Mutable State。
+
+这对未来 PostgreSQL 是很自然的：
+
+```text
+Python Object
+      ↓
+SQLAlchemy serialization
+      ↓
+Database row
+```
+
+数据库天然不会和 Python 对象共享同一个 dict。
+
+我们现在让 In-Memory 实现也遵守这个语义。
+
+### 当前 Persistence 层结构
+
+完成 Lesson6 后：
+
+```text
+runtime/persistence/
+│
+├── __init__.py
+│
+├── session_store.py
+│       └── SessionStore
+│
+├── execution_store.py
+│       └── ExecutionStore
+│
+├── in_memory_session_store.py
+│       └── InMemorySessionStore
+│
+└── in_memory_execution_store.py
+        └── InMemoryExecutionStore
+```
+
+Checkpoint 保持：
+
+```text
+runtime/checkpoint/
+│
+└── checkpoint_store.py
+        └── CheckpointStore
+```
+
+所以现在：
+
+```text
+SessionStore
+      │
+      ▼
+InMemorySessionStore
+ExecutionStore
+      │
+      ▼
+InMemoryExecutionStore
+```
+
+以及：
+
+```text
+CheckpointStore
+      │
+      ▼
+MemoryCheckpointStore
+```
+
+实际上已经形成了三组：
+
+```text
+Durable State / Snapshot
+            │
+            ▼
+       Persistence
+            │
+     ┌──────┴──────┐
+     ▼             ▼
+   Memory       PostgreSQL
+```
+
