@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+from click import echo
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+
+from runtime.persistence.database_config import DatabaseConfig
 
 
 class PostgresDatabase:
@@ -20,10 +23,14 @@ class PostgresDatabase:
 
     def __init__(
         self,
-        database_url: str,
+        config: DatabaseConfig,
     ) -> None:
+        self._config = config
+
         self._engine: AsyncEngine = create_async_engine(
-            database_url,
+            config.database_url,
+            echo=config.echo,
+            pool_pre_ping=config.pool_pre_ping,
             future=True,
         )
 

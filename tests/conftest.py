@@ -6,6 +6,11 @@ from runtime.events.event_bus import EventBus
 from runtime.execution.execution_runtime import ExecutionRuntime
 from runtime.tracing.trace_recorder import TraceRecorder
 
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 @pytest.fixture
 def event_bus():

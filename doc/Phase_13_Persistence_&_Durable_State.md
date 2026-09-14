@@ -1008,3 +1008,10 @@ updated_at
 
 这里存的是： ExecutionState 而不是： Execution
 
+
+## Lesson 9： PostgreSQL Integration & Schema Initialization
+
+### 本课目标
+
+> 让 PostgreSQL Adapter 可以在本地真实数据库中完成建表和连接验证。
+

@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16
+
+    container_name: agentos-postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: agentos
+      POSTGRES_USER: agentos
+      POSTGRES_PASSWORD: agentos
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - agentos-postgres-data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U agentos -d agentos"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  agentos-postgres-data:
