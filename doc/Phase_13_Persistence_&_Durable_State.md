@@ -1018,3 +1018,64 @@ updated_at
 
 ## Lesson 10：PostgreSQL Store Integration Test
 
+
+## Lesson 11：Persistence Configuration & Store Selection
+
+### 本课目标
+
+核心原则：
+
+> Application 只依赖 SessionStore 和 ExecutionStore 抽象，不负责决定具体存储实现。
+
+引入：
+
+```text
+PersistenceConfig
+        ↓
+PersistenceMode
+        ↓
+PersistenceStoreFactory
+        ↓
+SessionStore / ExecutionStore
+        ↓
+Application
+```
+
+新增三个核心对象：
+
+| **对象**                  | **职责**        |
+|-------------------------|---------------|
+| PersistenceMode         | 表示使用哪种持久化模式   |
+| PersistenceConfig       | 描述持久化配置       |
+| PersistenceStoreFactory | 根据配置创建具体Store |
+
+### 设计决定
+
+#### 1. 持久化模式
+
+当前只支持两种模式：
+
+```text
+IN_MEMORY
+POSTGRES
+```
+
+#### 2. 默认模式
+
+`PersistenceMode.IN_MEMORY`
+
+这样可以保证：
+
+ - 现有测试不需要启动 PostgreSQL
+ - 现有 Application 行为不改变
+ - 运行 AgentOS 不需要数据库
+ - PostgreSQL 只在明确配置时启用
+
+#### 3. PostgreSQL 配置
+
+PostgreSQL 模式必须提供：
+
+`DatabaseConfig`
+
+不能在 Factory 内部硬编码数据库地址、用户名或密码。
+

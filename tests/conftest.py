@@ -7,7 +7,11 @@ import pytest_asyncio
 
 from runtime.events.event_bus import EventBus
 from runtime.execution.execution_runtime import ExecutionRuntime
-from runtime.persistence import PostgresDatabase, DatabaseConfig, PostgresSchemaManager, PostgresExecutionStore
+from runtime.persistence.database_config import DatabaseConfig
+from runtime.persistence.postgres import PostgresDatabase
+from runtime.persistence.postgres_execution_store import PostgresExecutionStore
+from runtime.persistence.schema import PostgresSchemaManager
+# from runtime.persistence import PostgresDatabase, DatabaseConfig, PostgresSchemaManager, PostgresExecutionStore
 from runtime.tracing.trace_recorder import TraceRecorder
 
 import asyncio
