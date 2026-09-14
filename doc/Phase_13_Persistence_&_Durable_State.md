@@ -938,3 +938,73 @@ Store
 `ExecutionHandle`
 
 也没有把它变成 Database Entity。
+
+
+## Lesson 8: PostgreSQL Persistence
+
+### 本课目标
+
+> 把 InMemory Persistence 替换为 PostgreSQL Persistence。
+
+**重要原则**：
+
+> PostgreSQL 只能出现在 Persistence Adapter 层，不能进入 Runtime Core。
+
+### 数据库模型与 Runtime State 模型分离
+
+```text
+Session
+   │
+   ▼
+SessionState
+   │
+   ▼
+SessionStore
+   │
+   ▼
+PostgresSessionStore
+   │
+   ├── SessionRecord
+   │
+   └── PostgreSQL
+```
+
+**SessionState** 是 `Durable State Model`。
+
+**SQLAlchemy ORM Model** 是 `Persistence Model`。
+
+### 数据库结构
+
+#### 1. sessions
+
+逻辑结构：
+
+```text
+sessions
+────────────────────────
+session_id       PK
+created_at
+metadata
+```
+
+其中： metadata 使用 PostgreSQL JSONB。
+
+#### 2. executions
+
+逻辑结构：
+
+```text
+executions
+────────────────────────
+execution_id     PK
+status
+task_id
+session_id
+created_at
+updated_at
+```
+
+同样不需要把整个 Runtime Object 放进数据库。
+
+这里存的是： ExecutionState 而不是： Execution
+
