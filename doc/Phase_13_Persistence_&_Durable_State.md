@@ -1015,3 +1015,6 @@ updated_at
 
 > 让 PostgreSQL Adapter 可以在本地真实数据库中完成建表和连接验证。
 
+
+## Lesson 10：PostgreSQL Store Integration Test
+
