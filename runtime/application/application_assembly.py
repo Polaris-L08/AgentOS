@@ -86,6 +86,13 @@ class ApplicationAssembly:
             - session_manager
             - session_store
             - execution_store
+
+        If session_store or execution_store is not explicitly
+        registered, the corresponding store is created from
+        PersistenceConfig.
+
+        Resources created by the persistence factory are transferred
+        to AgentApplication ownership.
         """
 
         self._get_required_component("agent_runtime")
@@ -98,15 +105,34 @@ class ApplicationAssembly:
         session_store = self._get_optional_component("session_store")
         execution_store = self._get_optional_component("execution_store")
 
-        if session_store is None or execution_store is None:
-            default_session_store, default_execution_store = (
-                PersistenceStoreFactory.create_stores(self._persistence_config)
+        owned_persistence_resources = ()
+
+        missing_session_store = session_store is None
+        missing_execution_store = execution_store is None
+
+        if missing_session_store or missing_execution_store:
+            bundle = PersistenceStoreFactory.create_store_bundle(
+                self._persistence_config,
+                create_session_store=missing_session_store,
+                create_execution_store=missing_execution_store,
             )
 
             if session_store is None:
-                session_store = default_session_store
+                session_store = bundle.session_store
+
             if execution_store is None:
-                execution_store = default_execution_store
+                execution_store = bundle.execution_store
+
+            owned_persistence_resources = bundle.resources
+
+        if session_store is None:
+            raise RuntimeError(
+                "ApplicationAssembly failed to create SessionStore."
+            )
+        if execution_store is None:
+            raise RuntimeError(
+                "ApplicationAssembly failed to create ExecutionStore."
+            )
 
         application = AgentApplication(
             application_id=self._config.application_id,
@@ -120,6 +146,7 @@ class ApplicationAssembly:
             components=self._components.items(),
             session_store=session_store,
             execution_store=execution_store,
+            owned_persistence_resources = owned_persistence_resources,
         )
 
         return application

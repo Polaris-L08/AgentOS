@@ -1143,3 +1143,168 @@ Application 本身不需要知道：
 
 这些具体类型由 PersistenceStoreFactory 负责创建。
 
+
+## Lesson 13: Persistence Resource Lifecycle
+
+> 由 ApplicationAssembly 创建的 Persistence Store，其底层数据库资源由谁负责释放？
+
+### 当前生命周期
+
+```text
+ApplicationAssembly
+        │
+        │ build()
+        ▼
+AgentApplication
+        │
+        ├── SessionStore
+        │      └── PostgresDatabase
+        │
+        └── ExecutionStore
+               └── PostgresDatabase
+```
+
+这里还有一个更具体的问题。
+
+当前的 `PersistenceStoreFactory.create_stores()` 是：
+
+```text
+PersistenceStoreFactory
+        │
+        ├── create_session_store()
+        │       └── new PostgresDatabase
+        │
+        └── create_execution_store()
+                └── new PostgresDatabase
+```
+
+也就是说，PostgreSQL 模式下目前实际上可能得到：
+
+```text
+PostgresSessionStore
+        │
+        └── PostgresDatabase A
+
+PostgresExecutionStore
+        │
+        └── PostgresDatabase B
+```
+
+而不是：
+
+```text
+                 PostgresDatabase
+                    /       \
+                   /         \
+                  ▼           ▼
+       SessionStore       ExecutionStore
+```
+
+这是一个值得注意的问题。
+
+### 区分三个概念
+
+#### 1. Store
+
+> 持久化能力的抽象/Adapter
+
+负责：
+
+```text
+save
+load
+delete
+```
+
+#### 2. Database
+
+> 基础设施资源
+
+它可能拥有：
+
+```text
+connection pool
+engine
+database connections
+```
+
+所以它需要：
+
+```text
+open
+close
+```
+
+或者至少需要 close()。
+
+#### 3. Application
+
+Application 才是一个完整运行单元。
+
+它已经有：
+
+```text
+initialize()
+start()
+stop()
+```
+
+因此对于由 Application 组装出来的 Persistence 资源，一个自然的生命周期是：
+
+```text
+Application.initialize()
+        ↓
+Application.start()
+        ↓
+Application executes
+        ↓
+Application.stop()
+        ↓
+Persistence resources released
+```
+
+### 核心原则
+
+> 谁创建资源，谁拥有资源；谁拥有资源，谁负责释放资源。Resource Ownership（资源所有权）
+
+但是这里有一个特殊情况：
+
+```text
+ApplicationAssembly
+        ↓
+创建 Store
+        ↓
+Store 内部创建 Database
+        ↓
+返回给 Application
+```
+
+Assembly 本身只是一个： `Composition Root（组合根）`
+
+它的生命周期很短：
+
+```text
+assembly.build()
+       ↓
+return application
+       ↓
+assembly 不再参与运行
+```
+
+因此不能让 Assembly 承担运行期间的资源生命周期。 所以最终应该是：
+
+```text
+ApplicationAssembly
+       │
+       │ build
+       ▼
+AgentApplication
+       │
+       │ owns
+       ▼
+Persistence resources
+```
+
+即：
+
+> Assembly 负责组装，Application 负责运行期资源生命周期。

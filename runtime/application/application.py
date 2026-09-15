@@ -11,6 +11,7 @@ from runtime.events.publisher import EventPublisher
 from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
 from runtime.persistence import SessionStore, ExecutionStore, InMemorySessionStore, InMemoryExecutionStore
+from runtime.persistence.postgres import PostgresDatabase
 from runtime.session import SessionManager, Session, SessionState
 
 if TYPE_CHECKING:
@@ -50,6 +51,7 @@ class AgentApplication:
             components: tuple[tuple[str, Any],...] | None = None,
             session_store: SessionStore | None = None,
             execution_store: ExecutionStore | None = None,
+            owned_persistence_resources: tuple[PostgresDatabase, ...] | None = None,
     ) -> None:
         self.application_id = application_id
         self.name = name
@@ -60,6 +62,9 @@ class AgentApplication:
 
         self.session_store = session_store or InMemorySessionStore()
         self.execution_store = execution_store or InMemoryExecutionStore()
+
+        self._owned_persistence_resources  = tuple(owned_persistence_resources or ())
+        self._persistence_resources_closed = False
 
         self._publisher = publisher
         self._middleware_chain = middleware_chain
@@ -200,6 +205,7 @@ class AgentApplication:
 
         try:
             await self._shutdown_components()
+            await self._close_owned_persistence_resources()
         except BaseException:
             # The Application lifecycle must not silently return to
             # RUNNING after shutdown has started.
@@ -586,3 +592,23 @@ class AgentApplication:
                 f"Application is in state '{self._state.value}', "
                 f"expected '{expected.value}'."
             )
+
+    async def _close_owned_persistence_resources(self) -> None:
+        """
+        Close persistence resources owned by this Application.
+
+        Only resources explicitly transferred to the Application by
+        ApplicationAssembly are closed here.
+
+        Externally supplied persistence stores are not affected.
+        """
+
+        if self._persistence_resources_closed:
+            return
+
+        for resource in reversed(
+                self._owned_persistence_resources
+        ):
+            await resource.close()
+
+        self._persistence_resources_closed = True

@@ -7,6 +7,9 @@ from runtime.persistence.in_memory_session_store import (
 )
 from runtime.persistence.persistence_config import PersistenceConfig
 from runtime.persistence.persistence_mode import PersistenceMode
+from runtime.persistence.persistence_store_bundle import (
+    PersistenceStoreBundle,
+)
 from runtime.persistence.persistence_store_factory import (
     PersistenceStoreFactory,
 )
@@ -18,6 +21,7 @@ __all__ = [
     "InMemorySessionStore",
     "PersistenceConfig",
     "PersistenceMode",
+    "PersistenceStoreBundle",
     "PersistenceStoreFactory",
     "SessionStore",
 ]
