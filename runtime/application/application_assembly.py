@@ -6,6 +6,7 @@ from agents.base_agent import BaseAgent
 from runtime.application.application import AgentApplication
 from runtime.application.application_config import ApplicationConfig
 from runtime.application.component_registry import ComponentRegistry
+from runtime.persistence import PersistenceConfig, PersistenceStoreFactory
 
 
 class ApplicationAssembly:
@@ -22,8 +23,10 @@ class ApplicationAssembly:
     def __init__(
             self,
             config: ApplicationConfig,
+            persistence_config: PersistenceConfig | None = None,
     ) -> None:
         self._config = config
+        self._persistence_config = persistence_config or PersistenceConfig()
 
         self._components = ComponentRegistry()
         self._agents: list[BaseAgent] = []
@@ -31,6 +34,10 @@ class ApplicationAssembly:
     @property
     def config(self) -> ApplicationConfig:
         return self._config
+
+    @property
+    def persistence_config(self) -> PersistenceConfig:
+        return self._persistence_config
 
     @property
     def components(self) -> ComponentRegistry:
@@ -70,12 +77,10 @@ class ApplicationAssembly:
         Build an AgentApplication from the assembled components.
 
         Required components:
-
             - agent_runtime
             - execution_runtime
 
         Optional components:
-
             - publisher
             - middleware
             - session_manager
@@ -84,18 +89,24 @@ class ApplicationAssembly:
         """
 
         self._get_required_component("agent_runtime")
-
         self._get_required_component("execution_runtime")
 
         publisher = self._get_optional_component("publisher")
-
         middleware = self._get_optional_component("middleware")
-
         session_manager = self._get_optional_component("session_manager")
 
         session_store = self._get_optional_component("session_store")
-
         execution_store = self._get_optional_component("execution_store")
+
+        if session_store is None or execution_store is None:
+            default_session_store, default_execution_store = (
+                PersistenceStoreFactory.create_stores(self._persistence_config)
+            )
+
+            if session_store is None:
+                session_store = default_session_store
+            if execution_store is None:
+                execution_store = default_execution_store
 
         application = AgentApplication(
             application_id=self._config.application_id,

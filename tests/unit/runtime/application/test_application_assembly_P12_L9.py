@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from agents.base_agent import BaseAgent
 from agents.identity import AgentIdentity
 from runtime.application.application import AgentApplication
@@ -8,9 +10,18 @@ from runtime.application.application_config import ApplicationConfig
 from runtime.events.event_bus import EventBus
 from runtime.execution.agent_runtime import AgentRuntime
 from runtime.execution.execution_runtime import ExecutionRuntime
-from runtime.session.session_manager import SessionManager
 from runtime.middleware.middleware_chain import MiddlewareChain
+from runtime.persistence.in_memory_execution_store import (
+    InMemoryExecutionStore,
+)
+from runtime.persistence.in_memory_session_store import (
+    InMemorySessionStore,
+)
+from runtime.persistence.persistence_config import PersistenceConfig
+from runtime.persistence.persistence_mode import PersistenceMode
+from runtime.session.session_manager import SessionManager
 from runtime.tracing.trace_recorder import TraceRecorder
+from models.task_request import TaskRequest
 
 
 class MockAgent(BaseAgent):
@@ -112,7 +123,7 @@ def test_assembly_injects_optional_middleware_chain():
         ApplicationAssembly(create_config())
         .register_component("agent_runtime", agent_runtime)
         .register_component("execution_runtime", execution_runtime)
-        .register_component("middleware_chain", middleware_chain)
+        .register_component("middleware", middleware_chain)
         .build()
     )
 
@@ -181,11 +192,8 @@ def test_assembly_rejects_duplicate_agent_ids():
         .add_agent(agent1)
     )
 
-    try:
+    with pytest.raises(ValueError, match="Agent already registered"):
         assembly.add_agent(agent2)
-        assert False, "Expected ValueError"
-    except ValueError as error:
-        assert "Agent already registered" in str(error)
 
 
 def test_assembly_requires_agent_runtime():
@@ -196,11 +204,8 @@ def test_assembly_requires_agent_runtime():
         .register_component("execution_runtime", execution_runtime)
     )
 
-    try:
+    with pytest.raises(ValueError, match="agent_runtime"):
         assembly.build()
-        assert False, "Expected ValueError"
-    except ValueError as error:
-        assert "agent_runtime" in str(error)
 
 
 def test_assembly_requires_execution_runtime():
@@ -211,11 +216,8 @@ def test_assembly_requires_execution_runtime():
         .register_component("agent_runtime", agent_runtime)
     )
 
-    try:
+    with pytest.raises(ValueError, match="execution_runtime"):
         assembly.build()
-        assert False, "Expected ValueError"
-    except ValueError as error:
-        assert "execution_runtime" in str(error)
 
 
 def test_assembly_is_independent_between_builds():
@@ -260,9 +262,143 @@ def test_assembly_is_independent_between_builds():
         "agent-2"
     )
 
-import pytest
 
-from models.task_request import TaskRequest
+def test_assembly_uses_in_memory_persistence_by_default():
+    agent_runtime, execution_runtime, _ = create_runtime_components()
+
+    application = (
+        ApplicationAssembly(create_config())
+        .register_component("agent_runtime", agent_runtime)
+        .register_component("execution_runtime", execution_runtime)
+        .build()
+    )
+
+    assert isinstance(
+        application.session_store,
+        InMemorySessionStore,
+    )
+
+    assert isinstance(
+        application.execution_store,
+        InMemoryExecutionStore,
+    )
+
+
+def test_assembly_uses_configured_in_memory_persistence():
+    agent_runtime, execution_runtime, _ = create_runtime_components()
+
+    persistence_config = PersistenceConfig(
+        mode=PersistenceMode.IN_MEMORY,
+    )
+
+    application = (
+        ApplicationAssembly(
+            create_config(),
+            persistence_config=persistence_config,
+        )
+        .register_component("agent_runtime", agent_runtime)
+        .register_component("execution_runtime", execution_runtime)
+        .build()
+    )
+
+    assert application.session_store is not None
+    assert application.execution_store is not None
+
+    assert isinstance(
+        application.session_store,
+        InMemorySessionStore,
+    )
+
+    assert isinstance(
+        application.execution_store,
+        InMemoryExecutionStore,
+    )
+
+
+def test_assembly_preserves_explicit_session_store():
+    agent_runtime, execution_runtime, _ = create_runtime_components()
+
+    explicit_session_store = InMemorySessionStore()
+
+    application = (
+        ApplicationAssembly(create_config())
+        .register_component("agent_runtime", agent_runtime)
+        .register_component("execution_runtime", execution_runtime)
+        .register_component("session_store", explicit_session_store)
+        .build()
+    )
+
+    assert application.session_store is explicit_session_store
+
+
+def test_assembly_preserves_explicit_execution_store():
+    agent_runtime, execution_runtime, _ = create_runtime_components()
+
+    explicit_execution_store = InMemoryExecutionStore()
+
+    application = (
+        ApplicationAssembly(create_config())
+        .register_component("agent_runtime", agent_runtime)
+        .register_component("execution_runtime", execution_runtime)
+        .register_component("execution_store", explicit_execution_store)
+        .build()
+    )
+
+    assert application.execution_store is explicit_execution_store
+
+
+def test_assembly_allows_explicit_store_to_override_persistence_config():
+    agent_runtime, execution_runtime, _ = create_runtime_components()
+
+    explicit_session_store = InMemorySessionStore()
+    explicit_execution_store = InMemoryExecutionStore()
+
+    persistence_config = PersistenceConfig(
+        mode=PersistenceMode.IN_MEMORY,
+    )
+
+    application = (
+        ApplicationAssembly(
+            create_config(),
+            persistence_config=persistence_config,
+        )
+        .register_component("agent_runtime", agent_runtime)
+        .register_component("execution_runtime", execution_runtime)
+        .register_component("session_store", explicit_session_store)
+        .register_component("execution_store", explicit_execution_store)
+        .build()
+    )
+
+    assert application.session_store is explicit_session_store
+    assert application.execution_store is explicit_execution_store
+
+
+def test_assembly_can_use_mixed_explicit_and_configured_stores():
+    agent_runtime, execution_runtime, _ = create_runtime_components()
+
+    explicit_session_store = InMemorySessionStore()
+
+    persistence_config = PersistenceConfig(
+        mode=PersistenceMode.IN_MEMORY,
+    )
+
+    application = (
+        ApplicationAssembly(
+            create_config(),
+            persistence_config=persistence_config,
+        )
+        .register_component("agent_runtime", agent_runtime)
+        .register_component("execution_runtime", execution_runtime)
+        .register_component("session_store", explicit_session_store)
+        .build()
+    )
+
+    assert application.session_store is explicit_session_store
+
+    assert isinstance(
+        application.execution_store,
+        InMemoryExecutionStore,
+    )
 
 
 @pytest.mark.asyncio

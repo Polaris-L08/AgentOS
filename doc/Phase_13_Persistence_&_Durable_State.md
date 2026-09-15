@@ -1043,11 +1043,11 @@ Application
 
 新增三个核心对象：
 
-| **对象**                  | **职责**        |
-|-------------------------|---------------|
-| PersistenceMode         | 表示使用哪种持久化模式   |
-| PersistenceConfig       | 描述持久化配置       |
-| PersistenceStoreFactory | 根据配置创建具体Store |
+| **对象**                | **职责**               |
+|-------------------------|------------------------|
+| PersistenceMode         | 表示使用哪种持久化模式 |
+| PersistenceConfig       | 描述持久化配置         |
+| PersistenceStoreFactory | 根据配置创建具体Store  |
 
 ### 设计决定
 
@@ -1078,4 +1078,68 @@ PostgreSQL 模式必须提供：
 `DatabaseConfig`
 
 不能在 Factory 内部硬编码数据库地址、用户名或密码。
+
+
+## Lesson 12: 将 PersistenceConfig 接入 ApplicationAssembly
+
+### 本课目标
+
+Lesson11 已完成：
+
+ - PersistenceMode
+ - PersistenceConfig
+ - PersistenceStoreFactory
+ - In-Memory Store 选择
+ - PostgreSQL Store 选择
+ - 默认仍为 In-Memory
+ - 测试通过
+
+本课将把配置真正接入 Application，使调用方可以通过：
+
+`PersistenceConfig(...)`
+
+决定 Application 使用哪一种持久化实现。
+
+最终希望支持：
+
+```python
+application = (
+    ApplicationAssembly(...)
+    .with_persistence(
+        PersistenceConfig(
+            mode=PersistenceMode.IN_MEMORY,
+        )
+    )
+    .build()
+)
+```
+
+或者：
+
+```python
+application = (
+    ApplicationAssembly(...)
+    .with_persistence(
+        PersistenceConfig(
+            mode=PersistenceMode.POSTGRES,
+            database=DatabaseConfig(
+                database_url=(
+                    "postgresql+asyncpg://"
+                    "agentos:agentos@localhost:5432/agentos"
+                ),
+            ),
+        )
+    )
+    .build()
+)
+```
+
+Application 本身不需要知道：
+
+ - `InMemorySessionStore`
+ - `PostgresSessionStore`
+ - `InMemoryExecutionStore`
+ - `PostgresExecutionStore`
+
+这些具体类型由 PersistenceStoreFactory 负责创建。
 
