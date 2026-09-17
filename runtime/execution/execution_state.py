@@ -36,6 +36,13 @@ class ExecutionState(BaseModel):
     - asyncio.Task
     - network connections
     - LLM clients
+
+    The current_checkpoint_id identifies the checkpoint from which
+    this logical Execution should be recovered when recovery is
+    required.
+
+    It identifies a checkpoint snapshot, but does not embed or
+    otherwise couple the Execution with the live Runtime.
     """
 
     execution_id: str
@@ -45,6 +52,8 @@ class ExecutionState(BaseModel):
     task_id: str | None = None
 
     session_id: str | None = None
+
+    current_checkpoint_id: str | None = None
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)

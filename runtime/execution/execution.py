@@ -21,7 +21,7 @@ class Execution:
 
     Execution represents one logical User Request execution.
 
-    It is intentionally independent from:
+    It is intentionally independent of:
 
     - ExecutionRuntime
     - ExecutionHandle
@@ -108,6 +108,13 @@ class Execution:
         return self._state.session_id
 
     @property
+    def current_checkpoint_id(self) -> str | None:
+        """
+        Return the identifier of the current recovery checkpoint.
+        """
+        return self._state.current_checkpoint_id
+
+    @property
     def metadata(self) -> dict[str, Any]:
         """
         Return Execution metadata.
@@ -116,6 +123,21 @@ class Execution:
         logical state without going through the Execution object.
         """
         return dict(self._state.metadata)
+
+    def set_checkpoint(self, checkpoint_id: str | None) -> None:
+        """
+        Set the current recovery checkpoint.
+
+        The checkpoint identifier is a logical reference only.
+        Execution does not load, persist, or otherwise manage the
+        Checkpoint object itself.
+        """
+        self._state = self._state.model_copy(
+            update={
+                "current_checkpoint_id": checkpoint_id,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
 
     def start(self) -> None:
         """

@@ -1308,3 +1308,179 @@ Persistence resources
 即：
 
 > Assembly 负责组装，Application 负责运行期资源生命周期。
+
+
+## Lesson 14： Execution / Checkpoint / Runtime Persistence Integration
+
+### 本课目标
+
+本课不是新增 Persistence 基础设施，也不是重新实现 CheckpointStore。
+
+本课要解决的是：
+
+> 一个 Logical Execution 如何与它实际运行的 Runtime，以及用于恢复的 Checkpoint 建立明确、可持久化的关系。
+
+### 审计后的核心结论
+
+```text
+                     Logical Layer
+                ┌────────────────────┐
+                │     Execution      │
+                │                    │
+                │ execution_id = E1  │
+                │ status = PAUSED    │
+                └─────────┬──────────┘
+                          │
+                          │ associated checkpoint
+                          ▼
+                ┌────────────────────┐
+                │     Checkpoint     │
+                │                    │
+                │ checkpoint_id=C1   │
+                │ execution_id = E1  │
+                │ runtime_id = R1   │
+                │ shared_context     │
+                │ agents             │
+                └─────────┬──────────┘
+                          │
+                          │ reconstruct
+                          ▼
+                ┌────────────────────┐
+                │  RuntimeContext    │
+                │                    │
+                │ runtime_id = R1    │
+                │ trace = NEW        │
+                └─────────┬──────────┘
+                          │
+                          ▼
+                  ExecutionRuntime
+                          │
+                          ▼
+                   ExecutionHandle
+```
+
+> Execution 是“我正在执行什么”，
+> Checkpoint 是“它执行到了哪里”，
+> Runtime 是“现在由哪个运行时实例承载它”。
+
+### 核心设计
+
+```text
+Execution
+    │
+    │ current_checkpoint_id
+    ▼
+Checkpoint
+    │
+    │ runtime_id
+    ▼
+RuntimeContext
+```
+
+职责分别是：
+
+| 对象                           | 核心职责                                |
+|--------------------------------|-----------------------------------------|
+| `Execution` / `ExecutionState` | 表示一次 Logical Execution 及其生命周期 |
+| `Checkpoint`                   | 保存可恢复的 Runtime Snapshot           |
+| `RuntimeContext`               | 当前正在运行的 Live Runtime             |
+| `CheckpointStore`              | 持久化 / 读取 Checkpoint                |
+| `ExecutionStore`               | 持久化 / 读取 Logical Execution         |
+
+### 修改意见
+
+1. `ExecutionState` 增加 `current_checkpoint_id`
+    它表达的是：
+
+    当前这个 Logical Execution 如果需要恢复，应该从哪个 Checkpoint 恢复。
+
+    而不是：
+
+    Checkpoint 属于哪个 Execution。
+
+    这是一个很重要的方向性区别。
+
+2. Checkpoint 不增加 execution_id
+
+3. 为什么 ExecutionState 可以保存 current_checkpoint_id
+    因为这是 Execution 自己的恢复游标。
+
+    例如：
+    ```text
+    Execution E001
+    
+    status = PAUSED
+    current_checkpoint_id = C003
+   ```
+    
+    Checkpoint Store：
+
+    ```text
+    C001
+    C002
+    C003
+    ```
+   
+    那么恢复：
+
+    ```text
+    E001
+     │
+     │ current_checkpoint_id = C003
+     ▼
+    C003
+     │
+     │ runtime_id = R001
+     ▼
+    RuntimeContext(R001)
+    ```
+   
+    这意味着一个 Execution 可以拥有多个 Checkpoint：
+
+4. 扩展ApplicationExecutor，增加恢复入口
+
+
+    ```text
+    E001
+     ├── C001
+     ├── C002
+     └── C003 ← current
+    ```
+   
+    而 ExecutionState 只需要知道： `current_checkpoint_id = C003`
+
+### 最终模型
+
+```text
+┌─────────────────────────────┐
+│       Execution E001        │
+│                             │
+│ execution_id = E001         │
+│ status = PAUSED             │
+│ current_checkpoint_id=C003  │
+└──────────────┬──────────────┘
+               │
+               │ load(C003)
+               ▼
+┌─────────────────────────────┐
+│      Checkpoint C003        │
+│                             │
+│ checkpoint_id = C003        │
+│ runtime_id = R001           │
+│ task_id = T001              │
+│ shared_context = ...        │
+│ agents = ...                │
+└──────────────┬──────────────┘
+               │
+               │ resume
+               ▼
+┌─────────────────────────────┐
+│     RuntimeContext          │
+│                             │
+│ runtime_id = R001           │
+│ trace_id = NEW              │
+│ shared_context = ...        │
+└─────────────────────────────┘
+```
+
+> Execution 决定“恢复哪个 Checkpoint”；Checkpoint 决定“如何恢复 Runtime”。

@@ -29,6 +29,7 @@ class PostgresExecutionStore(ExecutionStore):
                 status=state.status.value,
                 task_id=state.task_id,
                 session_id=state.session_id,
+                current_checkpoint_id=state.current_checkpoint_id,
                 created_at=state.created_at,
                 updated_at=state.updated_at,
             )
@@ -57,6 +58,7 @@ class PostgresExecutionStore(ExecutionStore):
                 status=ExecutionStatus(record.status),
                 task_id=record.task_id,
                 session_id=record.session_id,
+                current_checkpoint_id=record.current_checkpoint_id,
                 created_at=record.created_at,
                 updated_at=record.updated_at,
             )
