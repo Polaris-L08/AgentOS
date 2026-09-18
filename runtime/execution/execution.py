@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from runtime.execution.execution_state import (
     ExecutionState,
@@ -40,20 +41,22 @@ class Execution:
         execution_id: str,
         task_id: str | None = None,
         session_id: str | None = None,
+        current_checkpoint_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         created_at: datetime | None = None,
+        status: ExecutionStatus = ExecutionStatus.CREATED,
+        updated_at: datetime | None = None,
     ) -> None:
         now = created_at or datetime.now(timezone.utc)
 
-        self._state = ExecutionState(
-            execution_id=execution_id,
-            status=ExecutionStatus.CREATED,
-            task_id=task_id,
-            session_id=session_id,
-            created_at=now,
-            updated_at=now,
-            metadata=dict(metadata or {}),
-        )
+        self._execution_id = execution_id
+        self._task_id = task_id
+        self._session_id = session_id
+        self._current_checkpoint_id = current_checkpoint_id
+        self._status = status
+        self._metadata = dict(metadata or {})
+        self._created_at = now
+        self._updated_at = updated_at or now
 
     @classmethod
     def from_state(
@@ -71,11 +74,12 @@ class Execution:
             execution_id=state.execution_id,
             task_id=state.task_id,
             session_id=state.session_id,
+            current_checkpoint_id=state.current_checkpoint_id,
             metadata=state.metadata,
             created_at=state.created_at,
+            status=state.status,
+            updated_at=state.updated_at,
         )
-
-        execution._state = state.model_copy(deep=True)
 
         return execution
 
@@ -84,35 +88,35 @@ class Execution:
         """
         Return the logical Execution identity.
         """
-        return self._state.execution_id
+        return self._execution_id
 
     @property
     def status(self) -> ExecutionStatus:
         """
         Return the current lifecycle status.
         """
-        return self._state.status
+        return self._status
 
     @property
     def task_id(self) -> str | None:
         """
         Return the associated task identifier.
         """
-        return self._state.task_id
+        return self._task_id
 
     @property
     def session_id(self) -> str | None:
         """
         Return the associated session identifier.
         """
-        return self._state.session_id
+        return self._session_id
 
     @property
     def current_checkpoint_id(self) -> str | None:
         """
         Return the identifier of the current recovery checkpoint.
         """
-        return self._state.current_checkpoint_id
+        return self._current_checkpoint_id
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -122,22 +126,36 @@ class Execution:
         A copy is returned so callers cannot mutate the internal
         logical state without going through the Execution object.
         """
-        return dict(self._state.metadata)
+        return dict(self._metadata)
+
+    @property
+    def created_at(self) -> datetime:
+        return self._created_at
+
+    @property
+    def updated_at(self) -> datetime:
+        return self._updated_at
+
+    @property
+    def is_terminal(self) -> bool:
+        """
+        Return whether the Execution has reached a terminal state.
+        """
+        return self.status in {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+        }
 
     def set_checkpoint(self, checkpoint_id: str | None) -> None:
         """
         Set the current recovery checkpoint.
 
-        The checkpoint identifier is a logical reference only.
-        Execution does not load, persist, or otherwise manage the
-        Checkpoint object itself.
+        Execution stores only the checkpoint identifier. It does not
+        load, persist, or manage the Checkpoint object itself.
         """
-        self._state = self._state.model_copy(
-            update={
-                "current_checkpoint_id": checkpoint_id,
-                "updated_at": datetime.now(timezone.utc),
-            }
-        )
+        self._current_checkpoint_id = checkpoint_id
+        self._updated_at = datetime.now(timezone.utc)
 
     def start(self) -> None:
         """
@@ -208,10 +226,17 @@ class Execution:
     def snapshot(self) -> ExecutionState:
         """
         Create a durable snapshot of the logical Execution.
-
-        The returned state is detached from the live Execution object.
         """
-        return self._state.model_copy(deep=True)
+        return ExecutionState(
+            execution_id=self._execution_id,
+            status=self._status,
+            task_id=self._task_id,
+            session_id=self._session_id,
+            current_checkpoint_id=self._current_checkpoint_id,
+            created_at=self._created_at,
+            updated_at=self._updated_at,
+            metadata=dict(self._metadata),
+        )
 
     def _transition(
         self,
@@ -219,7 +244,7 @@ class Execution:
         expected: ExecutionStatus,
         target: ExecutionStatus,
     ) -> None:
-        current = self._state.status
+        current = self._status
 
         if current != expected:
             raise ExecutionLifecycleError(
@@ -228,9 +253,5 @@ class Execution:
                 f"Expected current status: {expected}."
             )
 
-        self._state = self._state.model_copy(
-            update={
-                "status": target,
-                "updated_at": datetime.now(timezone.utc),
-            }
-        )
+        self._status = target
+        self._updated_at = datetime.now(timezone.utc)

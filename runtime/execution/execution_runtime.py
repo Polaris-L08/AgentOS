@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 from runtime.checkpoint import Checkpoint
 from runtime.context.runtime_context import RuntimeContext
+from runtime.execution import Execution
 from runtime.execution.execution_handle import ExecutionHandle
-from runtime.loop.loop_state import LoopState
 from runtime.tracing.trace import Trace
 from runtime.tracing.trace_context import TraceContext
 from runtime.tracing.trace_recorder import TraceRecorder
@@ -30,7 +30,7 @@ class ExecutionRuntime:
 
     trace_recorder: TraceRecorder
 
-    def create_execution(self) -> ExecutionHandle:
+    def create_execution(self, execution: Execution) -> ExecutionHandle:
         """
         Create a new Execution and return its lifecycle handle.
 
@@ -42,10 +42,15 @@ class ExecutionRuntime:
 
         return ExecutionHandle(
             runtime=self,
+            execution=execution,
             runtime_context=runtime_context,
         )
 
-    def resume_execution(self, checkpoint: Checkpoint) -> ExecutionHandle:
+    def resume_execution(
+            self,
+            execution: Execution,
+            checkpoint: Checkpoint
+    ) -> ExecutionHandle:
         """
         Reconstruct an Execution from a durable Checkpoint.
 
@@ -56,6 +61,7 @@ class ExecutionRuntime:
 
         return ExecutionHandle(
             runtime=self,
+            execution=execution,
             runtime_context=runtime_context,
         )
 

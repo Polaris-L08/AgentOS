@@ -86,7 +86,7 @@ class ApplicationExecutor:
 
         await self._persist_execution(execution)
 
-        execution_handle = self._execution_runtime.create_execution()
+        execution_handle = self._execution_runtime.create_execution(execution)
 
         try:
             execution.start()
@@ -139,8 +139,10 @@ class ApplicationExecutor:
 
         This is the low-level Application recovery primitive.
         """
+        execution = self._create_execution_from_checkpoint(checkpoint)
         return self._execution_runtime.resume_execution(
-            checkpoint
+            execution=execution,
+            checkpoint=checkpoint
         )
 
     async def recover_agent_execution(
@@ -188,9 +190,7 @@ class ApplicationExecutor:
         )
 
         try:
-            agent = self._application.get_agent(
-                agent_id
-            )
+            agent = self._application.get_agent(agent_id)
 
             agent_checkpoint = checkpoint.agents.get(
                 agent.identity.agent_id
@@ -231,13 +231,26 @@ class ApplicationExecutor:
         The logical Execution identity is independent from the
         RuntimeContext.runtime_id owned by ExecutionRuntime.
         """
+        return Execution(
+            execution_id=str(uuid4()),
+            task_id=task.task_id,
+            session_id=task.session_id,
+        )
+
+    def _create_execution_from_checkpoint(self, checkpoint: Checkpoint) -> Execution:
+        """
+        Create a logical Execution association from a Checkpoint.
+
+        This does not restore a TaskRequest.
+
+        Until TaskStore exists, the checkpoint only provides the task_id.
+        """
         now = datetime.now(timezone.utc)
 
         state = ExecutionState(
             execution_id=str(uuid4()),
-            status=ExecutionStatus.CREATED,
-            task_id=task.task_id,
-            session_id=task.session_id,
+            status=ExecutionStatus.PAUSED,
+            task_id=checkpoint.task_id,
             created_at=now,
             updated_at=now,
         )
