@@ -104,6 +104,7 @@ class ApplicationAssembly:
 
         session_store = self._get_optional_component("session_store")
         execution_store = self._get_optional_component("execution_store")
+        checkpoint_store = self._get_optional_component("checkpoint_store")
 
         owned_persistence_resources = ()
 
@@ -146,6 +147,7 @@ class ApplicationAssembly:
             components=self._components.items(),
             session_store=session_store,
             execution_store=execution_store,
+            checkpoint_store=checkpoint_store,
             owned_persistence_resources = owned_persistence_resources,
         )
 

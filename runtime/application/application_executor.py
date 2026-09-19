@@ -145,6 +145,42 @@ class ApplicationExecutor:
             checkpoint=checkpoint
         )
 
+    async def recover_persisted_execution(self, execution_id: str) -> ExecutionHandle:
+        state = await self._application.execution_store.load(execution_id)
+
+        if state is None:
+            raise ApplicationLifecycleError(
+                f"Execution not found: {execution_id}"
+            )
+
+        execution = Execution.from_state(state)
+
+        checkpoint_id = execution.current_checkpoint_id
+
+        if checkpoint_id is None:
+            raise ApplicationLifecycleError(
+                f"Execution does not have a recovery checkpoint: {execution_id}"
+            )
+
+        checkpoint = await self._application.checkpoint_store.load(checkpoint_id)
+
+        if checkpoint is None:
+            raise ApplicationLifecycleError(
+                f"Checkpoint not found for Execution {execution_id}: {checkpoint_id}"
+            )
+
+        if checkpoint.task_id != execution.task_id:
+            raise ApplicationLifecycleError(
+                "Checkpoint task_id does not match Execution task_id: "
+                f"execution={execution.task_id}, "
+                f"checkpoint={checkpoint.task_id}"
+            )
+
+        return self._execution_runtime.resume_execution(
+            execution=execution,
+            checkpoint=checkpoint
+        )
+
     async def recover_agent_execution(
             self,
             checkpoint: Checkpoint,

@@ -6,6 +6,7 @@ from models.task_result import TaskResult
 from runtime.application.application_component import ApplicationComponent
 from runtime.application.application_executor import ApplicationExecutor
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
+from runtime.checkpoint import CheckpointStore, MemoryCheckpointStore
 from runtime.events.event import Event
 from runtime.events.publisher import EventPublisher
 from runtime.middleware.middleware_chain import MiddlewareChain
@@ -51,6 +52,7 @@ class AgentApplication:
             components: tuple[tuple[str, Any],...] | None = None,
             session_store: SessionStore | None = None,
             execution_store: ExecutionStore | None = None,
+            checkpoint_store: CheckpointStore | None = None,
             owned_persistence_resources: tuple[PostgresDatabase, ...] | None = None,
     ) -> None:
         self.application_id = application_id
@@ -62,6 +64,7 @@ class AgentApplication:
 
         self.session_store = session_store or InMemorySessionStore()
         self.execution_store = execution_store or InMemoryExecutionStore()
+        self.checkpoint_store = checkpoint_store or MemoryCheckpointStore()
 
         self._owned_persistence_resources  = tuple(owned_persistence_resources or ())
         self._persistence_resources_closed = False
