@@ -1500,3 +1500,8 @@ RuntimeContext
 | `test_recover_persisted_execution_restores_shared_context`                | SharedContext 恢复                                 |
 | `test_recover_persisted_execution_creates_new_trace`                      | 恢复时创建新的 Trace，同时使用 `agent.resume` span |
 
+
+## Lesson 15: TaskStore
+
+在Lesson14的实现过程中，发现`task_id`与`task_request`之间没有映射关系。系统中缺乏TaskRequest的查询组件。
+
