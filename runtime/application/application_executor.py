@@ -169,7 +169,8 @@ class ApplicationExecutor:
                 f"Checkpoint not found for Execution {execution_id}: {checkpoint_id}"
             )
 
-        if checkpoint.task_id != execution.task_id:
+        if (checkpoint.task_id is not None
+                and checkpoint.task_id != execution.task_id):
             raise ApplicationLifecycleError(
                 "Checkpoint task_id does not match Execution task_id: "
                 f"execution={execution.task_id}, "
@@ -275,6 +276,8 @@ class ApplicationExecutor:
 
     def _create_execution_from_checkpoint(self, checkpoint: Checkpoint) -> Execution:
         """
+        Deprecated
+
         Create a logical Execution association from a Checkpoint.
 
         This does not restore a TaskRequest.

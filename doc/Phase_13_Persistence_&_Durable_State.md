@@ -1484,3 +1484,19 @@ RuntimeContext
 ```
 
 > Execution 决定“恢复哪个 Checkpoint”；Checkpoint 决定“如何恢复 Runtime”。
+
+### 测试文件
+
+`tests/runtime/application/test_application_executor_recovery.py`
+
+| 测试                                                                      | 验证内容                                           |
+|---------------------------------------------------------------------------|----------------------------------------------------|
+| `test_recover_persisted_execution_successfully`                           | 完整持久化恢复链路                                 |
+| `test_recover_persisted_execution_preserves_execution_identity`           | `execution_id` 与 `runtime_id` 身份分离            |
+| `test_recover_persisted_execution_fails_when_execution_does_not_exist`    | Execution 不存在                                   |
+| `test_recover_persisted_execution_fails_when_execution_has_no_checkpoint` | 没有恢复 Checkpoint                                |
+| `test_recover_persisted_execution_fails_when_checkpoint_does_not_exist`   | Checkpoint 不存在                                  |
+| `test_recover_persisted_execution_fails_when_task_id_does_not_match`      | Execution / Checkpoint 关联校验                    |
+| `test_recover_persisted_execution_restores_shared_context`                | SharedContext 恢复                                 |
+| `test_recover_persisted_execution_creates_new_trace`                      | 恢复时创建新的 Trace，同时使用 `agent.resume` span |
+
