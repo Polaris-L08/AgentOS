@@ -6,7 +6,7 @@ from agents.base_agent import BaseAgent
 from runtime.application.application import AgentApplication
 from runtime.application.application_config import ApplicationConfig
 from runtime.application.component_registry import ComponentRegistry
-from runtime.persistence import PersistenceConfig, PersistenceStoreFactory
+from runtime.persistence import PersistenceConfig, PersistenceStoreFactory, InMemoryTaskStore
 
 
 class ApplicationAssembly:
@@ -86,13 +86,8 @@ class ApplicationAssembly:
             - session_manager
             - session_store
             - execution_store
-
-        If session_store or execution_store is not explicitly
-        registered, the corresponding store is created from
-        PersistenceConfig.
-
-        Resources created by the persistence factory are transferred
-        to AgentApplication ownership.
+            - task_store
+            - checkpoint_store
         """
 
         self._get_required_component("agent_runtime")
@@ -104,6 +99,7 @@ class ApplicationAssembly:
 
         session_store = self._get_optional_component("session_store")
         execution_store = self._get_optional_component("execution_store")
+        task_store = self._get_optional_component("task_store")
         checkpoint_store = self._get_optional_component("checkpoint_store")
 
         owned_persistence_resources = ()
@@ -135,6 +131,9 @@ class ApplicationAssembly:
                 "ApplicationAssembly failed to create ExecutionStore."
             )
 
+        if task_store is None:
+            task_store = InMemoryTaskStore()
+
         application = AgentApplication(
             application_id=self._config.application_id,
             name=self._config.name,
@@ -147,6 +146,7 @@ class ApplicationAssembly:
             components=self._components.items(),
             session_store=session_store,
             execution_store=execution_store,
+            task_store=task_store,
             checkpoint_store=checkpoint_store,
             owned_persistence_resources = owned_persistence_resources,
         )

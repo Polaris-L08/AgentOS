@@ -1505,3 +1505,96 @@ RuntimeContext
 
 在Lesson14的实现过程中，发现`task_id`与`task_request`之间没有映射关系。系统中缺乏TaskRequest的查询组件。
 
+
+## Lesson 16: Persistence Integration
+
+### 目标：
+
+这一课我们正式把前面已经独立存在的：
+
+```text
+TaskStore
+ExecutionStore
+CheckpointStore
+```
+接入 Application / ApplicationExecutor。
+
+本 Lesson 的目标不是做 PostgreSQL TaskStore，而是先把运行时的持久化写入链路闭合。
+
+完成后：
+
+```text
+Application.execute(task)
+        │
+        ├── TaskStore.save(task)
+        │
+        ├── Execution.create
+        │
+        ├── ExecutionStore.save(Created)
+        │
+        ├── Execution.start
+        │
+        ├── ExecutionStore.save(Running)
+        │
+        └── Agent execution
+```
+
+同时提供Checkpoint持久化协调：
+
+```text
+ExecutionHandle
+      +
+Checkpoint
+      │
+      ↓
+CheckpointStore.save()
+      │
+      ↓
+Execution.set_checkpoint()
+      │
+      ↓
+ExecutionStore.save()
+```
+
+### 需要注意的
+
+Lesson16 没有修改 `PersistenceStoreBundle` 和 `PersistenceStoreFactory`。
+
+当前它们只负责：
+
+```text
+SessionStore
+ExecutionStore
+```
+
+这是当前源码的实际状态。`PersistenceStoreBundle` 目前只有 `session_store`、`execution_store` 和 PostgreSQL resources。 `PersistenceStoreFactory` 目前也只根据配置创建 SessionStore / ExecutionStore。
+
+因此现在：
+
+```text
+IN_MEMORY
+    SessionStore       → InMemory
+    ExecutionStore     → InMemory
+    TaskStore          → InMemory
+    CheckpointStore    → Memory
+
+POSTGRES
+    SessionStore       → PostgreSQL
+    ExecutionStore     → PostgreSQL
+    TaskStore          → InMemory   ← 临时
+    CheckpointStore    → Memory      ← 临时
+```
+
+这不是最终状态。
+
+Lesson17 会一次性改成：
+
+```text
+POSTGRES
+    SessionStore       → PostgreSQL
+    ExecutionStore     → PostgreSQL
+    TaskStore          → PostgreSQL
+    CheckpointStore    → PostgreSQL
+```
+
+然后才开始真正的跨进程持久化。

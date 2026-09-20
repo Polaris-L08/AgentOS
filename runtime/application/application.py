@@ -6,12 +6,13 @@ from models.task_result import TaskResult
 from runtime.application.application_component import ApplicationComponent
 from runtime.application.application_executor import ApplicationExecutor
 from runtime.application.application_lifecycle import ApplicationState, ApplicationLifecycleError
-from runtime.checkpoint import CheckpointStore, MemoryCheckpointStore
+from runtime.checkpoint import CheckpointStore, MemoryCheckpointStore, Checkpoint
 from runtime.events.event import Event
 from runtime.events.publisher import EventPublisher
 from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
-from runtime.persistence import SessionStore, ExecutionStore, InMemorySessionStore, InMemoryExecutionStore
+from runtime.persistence import SessionStore, ExecutionStore, InMemorySessionStore, InMemoryExecutionStore, TaskStore, \
+    InMemoryTaskStore
 from runtime.persistence.postgres import PostgresDatabase
 from runtime.session import SessionManager, Session, SessionState
 
@@ -29,11 +30,11 @@ class AgentApplication:
     Application-level runtime boundary.
 
     AgentApplication owns:
-
         - Agents
         - AgentRuntime
         - ExecutionRuntime
         - SessionManager
+        - Persistence stores
         - Application lifecycle
 
     AgentApplication coordinates runtime components but does not
@@ -52,6 +53,7 @@ class AgentApplication:
             components: tuple[tuple[str, Any],...] | None = None,
             session_store: SessionStore | None = None,
             execution_store: ExecutionStore | None = None,
+            task_store: TaskStore | None = None,
             checkpoint_store: CheckpointStore | None = None,
             owned_persistence_resources: tuple[PostgresDatabase, ...] | None = None,
     ) -> None:
@@ -64,6 +66,7 @@ class AgentApplication:
 
         self.session_store = session_store or InMemorySessionStore()
         self.execution_store = execution_store or InMemoryExecutionStore()
+        self.task_store = task_store or InMemoryTaskStore()
         self.checkpoint_store = checkpoint_store or MemoryCheckpointStore()
 
         self._owned_persistence_resources  = tuple(owned_persistence_resources or ())
@@ -132,12 +135,6 @@ class AgentApplication:
         Valid transition:
 
             CREATED → INITIALIZED
-
-        Initialization is intentionally limited to the Application
-        lifecycle state in this lesson.
-
-        Component-specific initialization will be introduced later
-        when Application Assembly is implemented.
         """
         self._require_state(ApplicationState.CREATED)
 
@@ -195,12 +192,6 @@ class AgentApplication:
         Valid transition:
 
             RUNNING → STOPPING → STOPPED
-
-        The STOPPING state exists to provide a correct lifecycle
-        boundary for future graceful shutdown behavior.
-
-        Actual draining/cancellation of executions and component
-        shutdown will be introduced in later lessons.
         """
         self._require_state(ApplicationState.RUNNING)
 
@@ -248,6 +239,37 @@ class AgentApplication:
         self._validate_task_session(task)
 
         return await self._executor.execute(task)
+
+    # ------------------------------------------------------------------
+    # Checkpoint persistence
+    # ------------------------------------------------------------------
+    async def persist_checkpoint(
+            self,
+            execution_handle: ExecutionHandle,
+            checkpoint: Checkpoint,
+    ) -> None:
+        """
+        Persist a Checkpoint and bind it to its logical Execution.
+
+        Persistence order:
+            CheckpointStore.save()
+                    ↓
+            Execution.set_checkpoint()
+                    ↓
+            ExecutionStore.save()
+
+        The checkpoint is persisted before the Execution references it.
+        This prevents a durable Execution from pointing to a checkpoint
+        that has not yet been persisted.
+
+        The caller owns the ExecutionHandle lifecycle.
+        """
+        self._require_state(ApplicationState.RUNNING)
+
+        await self._executor.persist_checkpoint(
+            execution_handle=execution_handle,
+            checkpoint=checkpoint,
+        )
 
     # ------------------------------------------------------------------
     # Agent ownership

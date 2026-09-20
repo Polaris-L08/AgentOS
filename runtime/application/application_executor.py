@@ -62,6 +62,16 @@ class ApplicationExecutor:
         """
         Execute a new Application task.
 
+        Durable initialization order:
+
+            TaskRequest
+                ↓
+            TaskStore
+                ↓
+            Execution
+                ↓
+            ExecutionStore
+
         Execution lifecycle:
 
             CREATED
@@ -81,6 +91,7 @@ class ApplicationExecutor:
         The logical Execution and its durable state are independent
         from the live ExecutionHandle.
         """
+        await self._persist_task(task)
 
         execution = self._create_execution(task)
 
@@ -124,6 +135,49 @@ class ApplicationExecutor:
         finally:
             await execution_handle.close()
 
+    async def persist_checkpoint(
+            self,
+            execution_handle: ExecutionHandle,
+            checkpoint: Checkpoint
+    ) -> None:
+        """
+        Persist a Checkpoint and bind it to its logical Execution.
+
+        Persistence order:
+
+            CheckpointStore.save()
+                    ↓
+            Execution.set_checkpoint()
+                    ↓
+            ExecutionStore.save()
+
+        The checkpoint is persisted before the Execution references it.
+        """
+        execution = execution_handle.execution
+        if checkpoint.task_id is not None:
+            if checkpoint.task_id != execution.task_id:
+                raise ApplicationLifecycleError(
+                    "Checkpoint task_id does not match Execution task_id: "
+                    f"execution={execution.task_id}, "
+                    f"checkpoint={checkpoint.task_id}"
+                )
+
+        if checkpoint.runtime_id != execution_handle.runtime_id:
+            raise ApplicationLifecycleError(
+                "Checkpoint runtime_id does not match Execution runtime_id: "
+                f"execution={execution_handle.runtime_id}, "
+                f"checkpoint={checkpoint.runtime_id}"
+            )
+
+        await self._application.checkpoint_store.save(
+            checkpoint_id=checkpoint.checkpoint_id,
+            checkpoint=checkpoint
+        )
+
+        execution.set_checkpoint(checkpoint_id=checkpoint.checkpoint_id)
+
+        await self._persist_execution(execution)
+
     async def recover_execution(
             self,
             checkpoint: Checkpoint,
@@ -146,6 +200,16 @@ class ApplicationExecutor:
         )
 
     async def recover_persisted_execution(self, execution_id: str) -> ExecutionHandle:
+        """
+        Recover an Execution from durable ExecutionState and its
+        persisted Checkpoint.
+
+        The TaskRequest is intentionally not reconstructed here yet.
+
+        TaskStore is now responsible for durable TaskRequest storage,
+        while Task reconstruction and Agent resumption will be completed
+        in the subsequent recovery integration lesson.
+        """
         state = await self._application.execution_store.load(execution_id)
 
         if state is None:
@@ -190,36 +254,6 @@ class ApplicationExecutor:
     ) -> AgentResult:
         """
         Resume one Agent execution from a Checkpoint.
-
-        Recovery flow:
-
-            Checkpoint
-                |
-                v
-            ExecutionHandle
-                |
-                v
-            restored RuntimeContext
-                |
-                v
-            AgentCheckpoint
-                |
-                v
-            AgentExecutionContext
-                |
-                v
-            AgentRuntime
-                |
-                v
-            Agent
-
-        The Agent instance is resolved from the Application's
-        existing Agent registry.
-
-        The Agent instance itself is NOT recreated.
-
-        This method is intentionally an internal recovery primitive.
-        Workflow-level Agent selection will be introduced later.
         """
 
         execution_handle = await self.recover_execution(
@@ -276,13 +310,12 @@ class ApplicationExecutor:
 
     def _create_execution_from_checkpoint(self, checkpoint: Checkpoint) -> Execution:
         """
-        Deprecated
+        Deprecated low-level recovery helper.
 
-        Create a logical Execution association from a Checkpoint.
+        This path exists for direct Checkpoint recovery.
 
-        This does not restore a TaskRequest.
-
-        Until TaskStore exists, the checkpoint only provides the task_id.
+        Full TaskRequest reconstruction belongs to the durable
+        recovery path and will use TaskStore.
         """
         now = datetime.now(timezone.utc)
 
