@@ -106,12 +106,15 @@ class ApplicationAssembly:
 
         missing_session_store = session_store is None
         missing_execution_store = execution_store is None
+        missing_task_store = task_store is None
 
         if missing_session_store or missing_execution_store:
             bundle = PersistenceStoreFactory.create_store_bundle(
                 self._persistence_config,
                 create_session_store=missing_session_store,
                 create_execution_store=missing_execution_store,
+                create_task_store=missing_task_store,
+                create_checkpoint_store=checkpoint_store is None,
             )
 
             if session_store is None:
@@ -119,6 +122,12 @@ class ApplicationAssembly:
 
             if execution_store is None:
                 execution_store = bundle.execution_store
+
+            if task_store is None:
+                task_store = bundle.task_store
+
+            if checkpoint_store is None:
+                checkpoint_store = bundle.checkpoint_store
 
             owned_persistence_resources = bundle.resources
 
@@ -129,6 +138,16 @@ class ApplicationAssembly:
         if execution_store is None:
             raise RuntimeError(
                 "ApplicationAssembly failed to create ExecutionStore."
+            )
+
+        if task_store is None:
+            raise RuntimeError(
+                "ApplicationAssembly failed to create TaskStore."
+            )
+
+        if checkpoint_store is None:
+            raise RuntimeError(
+                "ApplicationAssembly failed to create CheckpointStore."
             )
 
         if task_store is None:

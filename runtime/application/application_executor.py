@@ -342,6 +342,15 @@ class ApplicationExecutor:
             execution.snapshot()
         )
 
+    async def _persist_task(
+            self,
+            task: TaskRequest,
+    ) -> None:
+        """
+        Persist the durable input of the logical Execution.
+        """
+        await self._application.task_store.save(task)
+
     def _select_default_agent(self) -> BaseAgent:
         agents = self._application.agents
 

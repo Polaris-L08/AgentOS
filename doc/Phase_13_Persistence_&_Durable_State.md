@@ -1598,3 +1598,8 @@ POSTGRES
 ```
 
 然后才开始真正的跨进程持久化。
+
+
+## Lesson 17： PostgreSQL TaskStore + CheckpointStore
+
+> Persistence Adapter 扩展

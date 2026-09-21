@@ -83,3 +83,57 @@ class ExecutionRecord(PersistenceBase):
         DateTime(timezone=True),
         nullable=False,
     )
+
+
+class TaskRecord(PersistenceBase):
+    """
+    PostgreSQL representation of TaskRequest.
+    """
+
+    __tablename__ = "tasks"
+
+    task_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    user_input: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    session_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+
+class CheckpointRecord(PersistenceBase):
+    """
+    PostgreSQL representation of a Checkpoint.
+
+    The runtime Checkpoint remains a Pydantic model.
+    PostgreSQL stores its serialized representation as JSONB.
+    """
+
+    __tablename__ = "checkpoints"
+
+    checkpoint_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    runtime_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    task_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    state: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
