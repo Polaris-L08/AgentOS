@@ -1600,6 +1600,70 @@ POSTGRES
 然后才开始真正的跨进程持久化。
 
 
-## Lesson 17： PostgreSQL TaskStore + CheckpointStore
+## Lesson 17: PostgreSQL TaskStore + CheckpointStore
 
 > Persistence Adapter 扩展
+
+
+## Lesson 18: Crash / Restart Recovery Integration
+
+### 本节目标
+
+Lesson18 本课要解决的缺口
+
+现在还缺：
+
+```text
+                    Process A
+                       │
+                  TaskRequest
+                       │
+          ┌────────────┴────────────┐
+          ↓                         ↓
+      TaskStore              ExecutionStore
+          │                         │
+          │                    Execution
+          │                         │
+          └────────────┬────────────┘
+                       ↓
+                  Checkpoint
+                       ↓
+                  💥 Crash
+                       │
+              ─────────┼─────────
+                       │
+                    Process B
+                       ↓
+              Load Execution
+                       ↓
+                 Load Task
+                       ↓
+              Load Checkpoint
+                       ↓
+            Reconstruct Runtime
+                       ↓
+                Resume Agent
+                       ↓
+                   Continue
+```
+
+本课最重要的变化 
+
+现在：`recover_persisted_execution(execution_id)` 只能得到：`ExecutionHandle`
+
+但真正恢复执行还需要：`TaskRequest`
+
+因为 Agent Runtime 的执行入口仍然需要：
+
+```text
+execute(
+    agent,
+    task,
+    runtime_context,
+    ...
+)
+```
+
+当前 `ApplicationExecutor` 自己也明确保留了这个边界：`recover_agent_execution()` 接收 `TaskRequest`，
+
+而 `recover_persisted_execution()` 目前还没有从 TaskStore 加载它。
