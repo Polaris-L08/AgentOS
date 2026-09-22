@@ -8,28 +8,47 @@ import pytest
 from agents import AgentResult, BaseAgent
 from agents.identity import AgentIdentity
 from models.task_request import TaskRequest
-from runtime.application.application_executor import ApplicationExecutor
-from runtime.checkpoint.checkpoint import AgentCheckpoint, Checkpoint
-from runtime.checkpoint.memory_checkpoint_store import MemoryCheckpointStore
-from runtime.context.agent_execution_context import AgentExecutionContext
-from runtime.context.context_state import ContextState
+from runtime.application.application import AgentApplication
+from runtime.application.application_executor import (
+    ApplicationExecutor,
+)
+from runtime.application.application_lifecycle import (
+    ApplicationLifecycleError,
+)
+from runtime.checkpoint.checkpoint import (
+    AgentCheckpoint,
+    Checkpoint,
+)
+from runtime.checkpoint.memory_checkpoint_store import (
+    MemoryCheckpointStore,
+)
+from runtime.context.agent_execution_context import (
+    AgentExecutionContext,
+)
 from runtime.context.shared_context import SharedContext
 from runtime.execution.agent_runtime import AgentRuntime
 from runtime.execution.execution_handle import ExecutionHandle
 from runtime.execution.execution_runtime import ExecutionRuntime
-from runtime.execution.execution_state import ExecutionState, ExecutionStatus
-from runtime.persistence.in_memory_execution_store import InMemoryExecutionStore
-from runtime.persistence.in_memory_task_store import InMemoryTaskStore
+from runtime.execution.execution_state import (
+    ExecutionState,
+    ExecutionStatus,
+)
+from runtime.persistence.in_memory_execution_store import (
+    InMemoryExecutionStore,
+)
+from runtime.persistence.in_memory_task_store import (
+    InMemoryTaskStore,
+)
 from runtime.persistence.task_store import TaskStore
 from runtime.tracing.trace_recorder import TraceRecorder
 
 
 class RecoverableAgent(BaseAgent):
     """
-    Deterministic Agent used by Lesson18 recovery integration tests.
+    Deterministic Agent used by Lesson19 recovery tests.
 
-    The Agent records the TaskRequest, RuntimeContext and restored
-    execution-local state it receives during resumed execution.
+    The Agent records the durable execution information restored
+    after the simulated process restart.
     """
 
     def __init__(
@@ -37,11 +56,13 @@ class RecoverableAgent(BaseAgent):
         identity: AgentIdentity | None = None,
     ) -> None:
         super().__init__(
-            identity=identity
-            or AgentIdentity(
-                agent_id="recoverable-agent-001",
-                agent_type="recovery-test",
-                name="RecoverableAgent",
+            identity=(
+                identity
+                or AgentIdentity(
+                    agent_id="recoverable-agent-001",
+                    agent_type="recovery-test",
+                    name="RecoverableAgent",
+                )
             )
         )
 
@@ -57,10 +78,14 @@ class RecoverableAgent(BaseAgent):
     ) -> AgentResult:
         self.invocation_count += 1
 
-        self.received_task_ids.append(task.task_id)
+        self.received_task_ids.append(
+            task.task_id
+        )
 
         self.received_runtime_ids.append(
-            agent_execution_context.runtime_context.runtime_id
+            agent_execution_context
+            .runtime_context
+            .runtime_id
         )
 
         self.received_step_counts.append(
@@ -77,7 +102,8 @@ class RecoverableAgent(BaseAgent):
                     .runtime_id
                 ),
                 "step_count": (
-                    agent_execution_context.loop.step_count
+                    agent_execution_context
+                    .loop.step_count
                 ),
             },
             metadata={
@@ -89,10 +115,10 @@ class RecoverableAgent(BaseAgent):
 @dataclass
 class ProcessRuntime:
     """
-    Runtime resources representing one application process.
+    Runtime resources representing one process.
 
-    The persistence stores are intentionally shared between Process A
-    and Process B to simulate durable storage surviving a process crash.
+    Persistence stores are shared between Process A and Process B
+    to simulate durable storage surviving a process crash.
     """
 
     execution_store: InMemoryExecutionStore
@@ -111,22 +137,26 @@ def create_process(
     checkpoint_store: MemoryCheckpointStore | None = None,
 ) -> ProcessRuntime:
     """
-    Create one independent runtime representing one process.
+    Create one independent runtime process.
 
     Runtime components are recreated for every process.
-    Persistence stores can be shared to represent durable storage.
+
+    Persistence stores may be shared between processes.
     """
 
     actual_execution_store = (
-        execution_store or InMemoryExecutionStore()
+        execution_store
+        or InMemoryExecutionStore()
     )
 
     actual_task_store = (
-        task_store or InMemoryTaskStore()
+        task_store
+        or InMemoryTaskStore()
     )
 
     actual_checkpoint_store = (
-        checkpoint_store or MemoryCheckpointStore()
+        checkpoint_store
+        or MemoryCheckpointStore()
     )
 
     execution_runtime = ExecutionRuntime(
@@ -146,7 +176,7 @@ def create_process(
         get_agent=lambda agent_id: (
             agent
             if agent.identity.agent_id == agent_id
-            else (_raise_agent_not_found(agent_id))
+            else _raise_agent_not_found(agent_id)
         ),
     )
 
@@ -166,7 +196,36 @@ def create_process(
     )
 
 
-def _raise_agent_not_found(agent_id: str):
+def create_application(
+    *,
+    execution_store: InMemoryExecutionStore,
+    task_store: TaskStore,
+    checkpoint_store: MemoryCheckpointStore,
+    agent: RecoverableAgent,
+) -> AgentApplication:
+    """
+    Create a real AgentApplication representing one process.
+
+    This is used by the Application-level recovery test.
+    """
+
+    return AgentApplication(
+        application_id="lesson19-recovery-app",
+        name="Lesson19 Recovery Application",
+        agent_runtime=AgentRuntime(),
+        execution_runtime=ExecutionRuntime(
+            trace_recorder=TraceRecorder(),
+        ),
+        agents=[agent],
+        execution_store=execution_store,
+        task_store=task_store,
+        checkpoint_store=checkpoint_store,
+    )
+
+
+def _raise_agent_not_found(
+    agent_id: str,
+):
     raise KeyError(
         f"Agent not found in Application: {agent_id}"
     )
@@ -177,9 +236,13 @@ def create_execution_state(
     execution_id: str,
     task_id: str,
     checkpoint_id: str,
+    entry_agent_id: str,
 ) -> ExecutionState:
     """
-    Create the durable ExecutionState representing a paused execution.
+    Create durable ExecutionState representing a paused
+    Execution after a crash.
+
+    The orchestration entry Agent is stored in Execution metadata.
     """
 
     return ExecutionState(
@@ -189,7 +252,8 @@ def create_execution_state(
         session_id=None,
         current_checkpoint_id=checkpoint_id,
         metadata={
-            "source": "lesson18-crash-restart-test",
+            "orchestrator_agent_id": entry_agent_id,
+            "source": "lesson19-crash-restart-test",
         },
     )
 
@@ -199,15 +263,19 @@ def create_checkpoint(
     checkpoint_id: str,
     runtime_id: str,
     task_id: str,
+    agent_id: str = "recoverable-agent-001",
 ) -> Checkpoint:
     """
     Create a durable Checkpoint containing one AgentCheckpoint.
-
-    The AgentCheckpoint represents execution-local state that must be
-    restored into the new AgentExecutionContext after restart.
     """
 
-    agent = RecoverableAgent()
+    agent = RecoverableAgent(
+        identity=AgentIdentity(
+            agent_id=agent_id,
+            agent_type="recovery-test",
+            name="RecoverableAgent",
+        )
+    )
 
     runtime = ExecutionRuntime(
         trace_recorder=TraceRecorder(),
@@ -215,17 +283,14 @@ def create_checkpoint(
 
     runtime_context = runtime.create_context()
 
-    agent_execution_context = AgentExecutionContext.create(
-        runtime_context=runtime_context,
-        agent=agent,
+    agent_execution_context = (
+        AgentExecutionContext.create(
+            runtime_context=runtime_context,
+            agent=agent,
+        )
     )
 
     agent_execution_context.loop.step_count = 3
-
-    # agent_execution_context.state.set(
-    #     "recovery.step",
-    #     "research-completed",
-    # )
 
     agent_checkpoint = AgentCheckpoint(
         agent_id=agent.identity.agent_id,
@@ -254,41 +319,33 @@ def create_checkpoint(
 @pytest.mark.asyncio
 async def test_crash_restart_recovery_restores_persisted_execution() -> None:
     """
-    Lesson18 acceptance:
+    Lesson19 keeps the low-level recovery contract:
 
         Process A
-            Task
-              ↓
-            Execution
-              ↓
-            Checkpoint
-              ↓
-            Persistence
-
-        Process A crashes
-
+            ↓
+        Execution + Checkpoint
+            ↓
+        Crash
+            ↓
         Process B
             ↓
         recover_persisted_execution()
             ↓
         ExecutionHandle
 
-    The logical Execution identity and RuntimeContext identity must
-    be restored from durable state.
+    Logical Execution identity and RuntimeContext identity
+    must both survive restart.
     """
 
     task = TaskRequest(
-        task_id="lesson18-task-001",
+        task_id="lesson19-task-001",
         user_input="Analyze NVIDIA stock risk",
     )
 
-    execution_id = "lesson18-execution-001"
-    checkpoint_id = "lesson18-checkpoint-001"
-    runtime_id = "lesson18-runtime-001"
-
-    # ---------------------------------------------------------------
-    # Process A
-    # ---------------------------------------------------------------
+    execution_id = "lesson19-execution-001"
+    checkpoint_id = "lesson19-checkpoint-001"
+    runtime_id = "lesson19-runtime-001"
+    agent_id = "recoverable-agent-001"
 
     process_a = create_process()
 
@@ -299,6 +356,7 @@ async def test_crash_restart_recovery_restores_persisted_execution() -> None:
             execution_id=execution_id,
             task_id=task.task_id,
             checkpoint_id=checkpoint_id,
+            entry_agent_id=agent_id,
         )
     )
 
@@ -306,6 +364,7 @@ async def test_crash_restart_recovery_restores_persisted_execution() -> None:
         checkpoint_id=checkpoint_id,
         runtime_id=runtime_id,
         task_id=task.task_id,
+        agent_id=agent_id,
     )
 
     await process_a.checkpoint_store.save(
@@ -313,22 +372,11 @@ async def test_crash_restart_recovery_restores_persisted_execution() -> None:
         checkpoint,
     )
 
-    # ---------------------------------------------------------------
-    # Process crash
-    #
-    # Only persistence survives.
-    # Runtime objects from Process A are discarded.
-    # ---------------------------------------------------------------
-
     execution_store = process_a.execution_store
     task_store = process_a.task_store
     checkpoint_store = process_a.checkpoint_store
 
     del process_a
-
-    # ---------------------------------------------------------------
-    # Process B
-    # ---------------------------------------------------------------
 
     process_b = create_process(
         execution_store=execution_store,
@@ -336,24 +384,38 @@ async def test_crash_restart_recovery_restores_persisted_execution() -> None:
         checkpoint_store=checkpoint_store,
     )
 
-    handle = await process_b.executor.recover_persisted_execution(
-        execution_id=execution_id,
+    handle = await (
+        process_b.executor
+        .recover_persisted_execution(
+            execution_id=execution_id,
+        )
     )
 
     try:
-        assert isinstance(handle, ExecutionHandle)
+        assert isinstance(
+            handle,
+            ExecutionHandle,
+        )
 
-        # Logical Execution identity survives restart.
-        assert handle.execution_id == execution_id
+        assert (
+            handle.execution_id
+            == execution_id
+        )
 
-        # Runtime identity is restored from Checkpoint.
-        assert handle.runtime_id == runtime_id
+        assert (
+            handle.runtime_id
+            == runtime_id
+        )
 
-        # They are different identity domains.
-        assert handle.execution_id != handle.runtime_id
+        assert (
+            handle.execution_id
+            != handle.runtime_id
+        )
 
-        # Execution is reconstructed from ExecutionState.
-        assert handle.execution.task_id == task.task_id
+        assert (
+            handle.execution.task_id
+            == task.task_id
+        )
 
         assert (
             handle.execution.current_checkpoint_id
@@ -365,28 +427,24 @@ async def test_crash_restart_recovery_restores_persisted_execution() -> None:
             == ExecutionStatus.PAUSED
         )
 
-        # RuntimeContext is reconstructed from Checkpoint.
         assert (
             handle.runtime_context.runtime_id
             == runtime_id
         )
 
         assert (
-            handle.runtime_context.shared_context.get(
-                "recovery.marker"
-            )
+            handle.runtime_context
+            .shared_context
+            .get("recovery.marker")
             == "checkpoint-created-before-crash"
         )
 
-        # Recovery creates a new trace.
         assert (
-            handle.runtime_context.trace.trace.trace_id
+            handle.runtime_context
+            .trace
+            .trace
+            .trace_id
             is not None
-        )
-
-        assert (
-            handle.runtime_context.trace.trace.trace_id
-            != runtime_id
         )
 
         assert (
@@ -397,82 +455,52 @@ async def test_crash_restart_recovery_restores_persisted_execution() -> None:
             .name
             == "agent.resume"
         )
+
     finally:
         await handle.close()
 
 
 @pytest.mark.asyncio
-async def test_crash_restart_recovery_loads_original_task() -> None:
+async def test_application_resume_execution_reconstructs_complete_execution() -> None:
     """
-    TaskRequest is durable input of the logical Execution.
+    Lesson19 main acceptance test.
 
-    recover_persisted_execution() intentionally does not reconstruct
-    TaskRequest itself. The recovery integration therefore loads the
-    original TaskRequest from TaskStore.
-    """
-
-    task = TaskRequest(
-        task_id="lesson18-task-002",
-        user_input="Determine current NVIDIA risk",
-    )
-
-    process_a = create_process()
-
-    await process_a.task_store.save(task)
-
-    # Simulate Process A disappearing.
-    task_store = process_a.task_store
-    del process_a
-
-    process_b = create_process(
-        task_store=task_store,
-    )
-
-    recovered_task = await process_b.task_store.load(
-        task.task_id,
-    )
-
-    assert recovered_task is not None
-    assert recovered_task.task_id == task.task_id
-    assert recovered_task.user_input == task.user_input
-
-
-@pytest.mark.asyncio
-async def test_crash_restart_recovery_resumes_agent_from_checkpoint() -> None:
-    """
-    Full Lesson18 Agent resume path.
-
-        Process A
-            ↓
-        Checkpoint
-            ↓
-        Crash
-            ↓
-        Process B
-            ↓
-        recover_persisted_execution()
-            ↓
-        Load TaskRequest from TaskStore
-            ↓
-        recover_agent_execution()
-            ↓
-        restore AgentExecutionContext
-            ↓
-        AgentRuntime.execute()
+    Process A
+        ↓
+    TaskStore
+        +
+    ExecutionStore
+        +
+    CheckpointStore
+        ↓
+    Crash
+        ↓
+    Process B
+        ↓
+    AgentApplication.resume_execution()
+        ↓
+    TaskRequest reconstruction
+        ↓
+    Execution reconstruction
+        ↓
+    Checkpoint reconstruction
+        ↓
+    Orchestrator.resume()
+        ↓
+    AgentRuntime
+        ↓
+    TaskResult
     """
 
     task = TaskRequest(
-        task_id="lesson18-task-003",
+        task_id="lesson19-task-002",
         user_input="Continue NVIDIA risk analysis",
     )
 
-    execution_id = "lesson18-execution-003"
-    checkpoint_id = "lesson18-checkpoint-003"
-    runtime_id = "lesson18-runtime-003"
-
-    # ---------------------------------------------------------------
-    # Process A
-    # ---------------------------------------------------------------
+    execution_id = "lesson19-execution-002"
+    checkpoint_id = "lesson19-checkpoint-002"
+    runtime_id = "lesson19-runtime-002"
+    agent_id = "recoverable-agent-001"
 
     process_a = create_process()
 
@@ -483,6 +511,7 @@ async def test_crash_restart_recovery_resumes_agent_from_checkpoint() -> None:
             execution_id=execution_id,
             task_id=task.task_id,
             checkpoint_id=checkpoint_id,
+            entry_agent_id=agent_id,
         )
     )
 
@@ -490,6 +519,7 @@ async def test_crash_restart_recovery_resumes_agent_from_checkpoint() -> None:
         checkpoint_id=checkpoint_id,
         runtime_id=runtime_id,
         task_id=task.task_id,
+        agent_id=agent_id,
     )
 
     await process_a.checkpoint_store.save(
@@ -497,202 +527,277 @@ async def test_crash_restart_recovery_resumes_agent_from_checkpoint() -> None:
         checkpoint,
     )
 
-    # Capture only the durable stores.
     execution_store = process_a.execution_store
     task_store = process_a.task_store
     checkpoint_store = process_a.checkpoint_store
 
     del process_a
 
-    # ---------------------------------------------------------------
-    # Process B
-    # ---------------------------------------------------------------
+    recovered_agent = RecoverableAgent()
 
-    process_b = create_process(
+    process_b = create_application(
         execution_store=execution_store,
         task_store=task_store,
         checkpoint_store=checkpoint_store,
+        agent=recovered_agent,
     )
 
-    # Step 1:
-    # Recover logical Execution + RuntimeContext.
-    handle = await process_b.executor.recover_persisted_execution(
-        execution_id=execution_id,
-    )
+    await process_b.initialize()
+    await process_b.start()
 
     try:
-        assert handle.execution_id == execution_id
-        assert handle.runtime_id == runtime_id
-
-        # Step 2:
-        # Recover the original TaskRequest.
-        recovered_task = await process_b.task_store.load(
-            task.task_id,
-        )
-
-        assert recovered_task is not None
-        assert recovered_task.task_id == task.task_id
-        assert recovered_task.user_input == task.user_input
-
-        # Step 3:
-        # Load the durable Checkpoint.
-        recovered_checkpoint = (
-            await process_b.checkpoint_store.load(
-                checkpoint_id,
-            )
-        )
-
-        assert recovered_checkpoint is not None
-        assert (
-            recovered_checkpoint.runtime_id
-            == runtime_id
-        )
-
-        # Step 4:
-        # Resume the Agent using the existing API.
-        result = await process_b.executor.recover_agent_execution(
-            checkpoint=recovered_checkpoint,
-            agent_id=process_b.agent.identity.agent_id,
-            task=recovered_task,
+        result = await process_b.resume_execution(
+            execution_id=execution_id,
         )
 
         assert result.success is True
 
         assert (
-            result.output["task_id"]
+            result.metadata["task_id"]
             == task.task_id
         )
 
         assert (
-            result.output["runtime_id"]
-            == runtime_id
+            result.metadata["agent_id"]
+            == agent_id
         )
 
-        # The AgentExecutionContext was restored from checkpoint.
         assert (
-            result.output["step_count"]
-            == 3
+            recovered_agent.invocation_count
+            == 1
         )
 
-        assert process_b.agent.invocation_count == 1
-
         assert (
-            process_b.agent.received_task_ids
+            recovered_agent.received_task_ids
             == [task.task_id]
         )
 
         assert (
-            process_b.agent.received_runtime_ids
+            recovered_agent.received_runtime_ids
             == [runtime_id]
         )
 
         assert (
-            process_b.agent.received_step_counts
+            recovered_agent.received_step_counts
             == [3]
         )
 
+        persisted = (
+            await execution_store.load(
+                execution_id
+            )
+        )
+
+        assert persisted is not None
+
+        assert (
+            persisted.status
+            == ExecutionStatus.COMPLETED
+        )
+
     finally:
-        # recover_agent_execution() creates and closes its own handle.
-        # This handle belongs to the persisted Execution recovery above.
-        await handle.close()
+        await process_b.stop()
 
 
 @pytest.mark.asyncio
-async def test_crash_restart_recovery_rejects_missing_task() -> None:
+async def test_application_resume_execution_rejects_missing_task() -> None:
     """
-    The durable TaskRequest is required by the Agent resume phase.
-
-    A missing TaskStore entry must prevent Agent recovery.
+    Application-level recovery must fail when the durable
+    TaskRequest is missing.
     """
 
-    task_id = "lesson18-missing-task"
+    task_id = "lesson19-missing-task"
+    execution_id = "lesson19-execution-missing-task"
+    checkpoint_id = "lesson19-checkpoint-missing-task"
+    runtime_id = "lesson19-runtime-missing-task"
+    agent_id = "recoverable-agent-001"
 
-    execution_id = "lesson18-execution-missing-task"
-    checkpoint_id = "lesson18-checkpoint-missing-task"
+    execution_store = InMemoryExecutionStore()
+    task_store = InMemoryTaskStore()
+    checkpoint_store = MemoryCheckpointStore()
 
-    process = create_process()
-
-    await process.execution_store.save(
+    await execution_store.save(
         create_execution_state(
             execution_id=execution_id,
             task_id=task_id,
             checkpoint_id=checkpoint_id,
+            entry_agent_id=agent_id,
         )
     )
 
     checkpoint = create_checkpoint(
         checkpoint_id=checkpoint_id,
-        runtime_id="lesson18-runtime-missing-task",
+        runtime_id=runtime_id,
         task_id=task_id,
+        agent_id=agent_id,
     )
 
-    await process.checkpoint_store.save(
+    await checkpoint_store.save(
         checkpoint_id,
         checkpoint,
     )
 
-    # The Execution and Checkpoint can be recovered independently.
-    handle = await process.executor.recover_persisted_execution(
-        execution_id=execution_id,
+    application = create_application(
+        execution_store=execution_store,
+        task_store=task_store,
+        checkpoint_store=checkpoint_store,
+        agent=RecoverableAgent(),
     )
+
+    await application.initialize()
+    await application.start()
 
     try:
-        assert handle.execution_id == execution_id
+        with pytest.raises(
+            ApplicationLifecycleError,
+            match="Task not found for Execution",
+        ):
+            await application.resume_execution(
+                execution_id=execution_id,
+            )
     finally:
-        await handle.close()
-
-    # But the Agent resume phase cannot continue without TaskRequest.
-    recovered_task = await process.task_store.load(
-        task_id,
-    )
-
-    assert recovered_task is None
+        await application.stop()
 
 
 @pytest.mark.asyncio
-async def test_crash_restart_recovery_rejects_task_checkpoint_mismatch() -> None:
+async def test_application_resume_execution_rejects_task_checkpoint_mismatch() -> None:
     """
     Execution and Checkpoint must refer to the same logical Task.
-
-    This validation already belongs to recover_persisted_execution().
-    Lesson18 verifies it as part of the restart boundary.
     """
 
-    execution_id = "lesson18-execution-task-mismatch"
-    checkpoint_id = "lesson18-checkpoint-task-mismatch"
+    execution_id = (
+        "lesson19-execution-task-mismatch"
+    )
+    checkpoint_id = (
+        "lesson19-checkpoint-task-mismatch"
+    )
 
-    process = create_process()
+    execution_store = InMemoryExecutionStore()
+    task_store = InMemoryTaskStore()
+    checkpoint_store = MemoryCheckpointStore()
 
-    await process.execution_store.save(
+    task = TaskRequest(
+        task_id="task-execution",
+        user_input="test mismatch",
+    )
+
+    await task_store.save(task)
+
+    await execution_store.save(
         create_execution_state(
             execution_id=execution_id,
-            task_id="task-execution",
+            task_id=task.task_id,
             checkpoint_id=checkpoint_id,
+            entry_agent_id=(
+                "recoverable-agent-001"
+            ),
         )
     )
 
     checkpoint = create_checkpoint(
         checkpoint_id=checkpoint_id,
-        runtime_id="lesson18-runtime-task-mismatch",
+        runtime_id="lesson19-runtime-mismatch",
         task_id="task-checkpoint",
     )
 
-    await process.checkpoint_store.save(
+    await checkpoint_store.save(
         checkpoint_id,
         checkpoint,
     )
 
-    from runtime.application.application_lifecycle import (
-        ApplicationLifecycleError,
+    application = create_application(
+        execution_store=execution_store,
+        task_store=task_store,
+        checkpoint_store=checkpoint_store,
+        agent=RecoverableAgent(),
     )
 
-    with pytest.raises(
-        ApplicationLifecycleError,
-        match=(
-            "Checkpoint task_id does not match "
-            "Execution task_id"
-        ),
-    ):
-        await process.executor.recover_persisted_execution(
+    await application.initialize()
+    await application.start()
+
+    try:
+        with pytest.raises(
+            ApplicationLifecycleError,
+            match=(
+                "Checkpoint task_id does not match "
+                "Execution task_id"
+            ),
+        ):
+            await application.resume_execution(
+                execution_id=execution_id,
+            )
+    finally:
+        await application.stop()
+
+
+@pytest.mark.asyncio
+async def test_application_resume_execution_rejects_missing_entry_agent() -> None:
+    """
+    Durable recovery must not silently select another Agent when
+    the persisted orchestration entry Agent is missing.
+    """
+
+    task = TaskRequest(
+        task_id="lesson19-task-missing-entry-agent",
+        user_input="test missing orchestration entry",
+    )
+
+    execution_id = (
+        "lesson19-execution-missing-entry-agent"
+    )
+    checkpoint_id = (
+        "lesson19-checkpoint-missing-entry-agent"
+    )
+
+    execution_store = InMemoryExecutionStore()
+    task_store = InMemoryTaskStore()
+    checkpoint_store = MemoryCheckpointStore()
+
+    await task_store.save(task)
+
+    await execution_store.save(
+        create_execution_state(
             execution_id=execution_id,
+            task_id=task.task_id,
+            checkpoint_id=checkpoint_id,
+            entry_agent_id=(
+                "agent-does-not-exist"
+            ),
         )
+    )
+
+    checkpoint = create_checkpoint(
+        checkpoint_id=checkpoint_id,
+        runtime_id="lesson19-runtime-missing-agent",
+        task_id=task.task_id,
+        agent_id="agent-does-exist",
+    )
+
+    await checkpoint_store.save(
+        checkpoint_id,
+        checkpoint,
+    )
+
+    application = create_application(
+        execution_store=execution_store,
+        task_store=task_store,
+        checkpoint_store=checkpoint_store,
+        agent=RecoverableAgent(),
+    )
+
+    await application.initialize()
+    await application.start()
+
+    try:
+        with pytest.raises(
+                ApplicationLifecycleError,
+                match=(
+                        "Checkpoint does not contain the persisted "
+                        "orchestration entry Agent"
+                ),
+        ):
+            await application.resume_execution(
+                execution_id=execution_id,
+            )
+    finally:
+        await application.stop()

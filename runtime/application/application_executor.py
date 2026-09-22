@@ -332,7 +332,7 @@ class ApplicationExecutor:
                 task=task,
                 execution_handle=execution_handle,
                 checkpoint=checkpoint,
-                entry_agent_id=entry_agent_id,
+                entry_agent_id=str(entry_agent_id),
             )
 
             result = self._to_task_result(
