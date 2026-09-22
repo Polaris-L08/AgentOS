@@ -16,44 +16,55 @@ from runtime.execution.execution_runtime import ExecutionRuntime
 from runtime.execution.execution import Execution
 from runtime.execution.execution_state import ExecutionState
 from runtime.execution.execution_state import ExecutionStatus
+from runtime.orchestration import (
+    Orchestrator,
+    SingleAgentOrchestrator,
+)
 
 
 class ApplicationExecutor:
     """
     Internal execution adapter for AgentApplication.
 
-    This class hides low-level execution lifecycle details from the
-    public Application API.
-
     Responsibilities:
         - create the logical Execution object
         - persist ExecutionState
+        - persist TaskRequest
         - create ExecutionHandle through ExecutionRuntime
-        - recover ExecutionHandle from Checkpoint
-        - resume a specific Agent execution from Checkpoint
-        - close ExecutionHandle after normal execution
+        - delegate normal execution to Orchestrator
+        - reconstruct durable Execution during recovery
+        - reconstruct TaskRequest during recovery
+        - delegate recovery to Orchestrator
+        - close ExecutionHandle after execution
 
     ApplicationExecutor does NOT own:
 
         - Checkpoint persistence
         - AgentContext
         - MemoryRuntime
-        - Agent scheduling
+        - AgentRuntime implementation
         - Workflow decisions
+        - concrete Agent orchestration logic
 
-    Execution is the logical execution object.
+    The Orchestrator owns orchestration decisions.
 
-    ExecutionHandle remains the live runtime handle created by
-    ExecutionRuntime.
+    Execution remains the logical execution object.
+
+    ExecutionHandle remains the live runtime handle.
     """
 
     def __init__(
         self,
         application,
         execution_runtime: ExecutionRuntime,
+        orchestrator: Orchestrator | None = None,
     ) -> None:
         self._application = application
         self._execution_runtime = execution_runtime
+
+        self._orchestrator = orchestrator or SingleAgentOrchestrator(
+            application=application,
+        )
 
     async def execute(
         self,
@@ -68,32 +79,33 @@ class ApplicationExecutor:
                 ↓
             TaskStore
                 ↓
+            Orchestration Entry Agent
+                ↓
             Execution
                 ↓
             ExecutionStore
-
-        Execution lifecycle:
-
-            CREATED
                 ↓
-            RUNNING
+            ExecutionRuntime
                 ↓
-            COMPLETED
-
-        When Agent execution fails:
-
-            CREATED
+            Orchestrator
                 ↓
-            RUNNING
-                ↓
-            FAILED
+            AgentRuntime
 
-        The logical Execution and its durable state are independent
-        from the live ExecutionHandle.
+        The orchestration entry Agent identity is persisted in
+        Execution.metadata before the live execution starts.
+
+        This allows Recovery to reconstruct the same orchestration
+        entry point without selecting a new default Agent.
         """
+
         await self._persist_task(task)
 
-        execution = self._create_execution(task)
+        entry_agent = self._orchestrator.resolve_entry_agent()
+
+        execution = self._create_execution(
+            task=task,
+            entry_agent_id=entry_agent.identity.agent_id,
+        )
 
         await self._persist_execution(execution)
 
@@ -104,18 +116,15 @@ class ApplicationExecutor:
 
             await self._persist_execution(execution)
 
-            agent = self._select_default_agent()
-
-            agent_result = await self._application.invoke_agent(
-                agent_id=agent.identity.agent_id,
+            orchestration_result = await self._orchestrator.execute(
                 task=task,
                 execution_handle=execution_handle,
             )
 
             result = self._to_task_result(
-                task,
-                agent,
-                agent_result,
+                task=task,
+                agent=orchestration_result.agent,
+                agent_result=orchestration_result.agent_result,
             )
 
             execution.complete()
@@ -138,7 +147,7 @@ class ApplicationExecutor:
     async def persist_checkpoint(
             self,
             execution_handle: ExecutionHandle,
-            checkpoint: Checkpoint
+            checkpoint: Checkpoint,
     ) -> None:
         """
         Persist a Checkpoint and bind it to its logical Execution.
@@ -164,14 +173,14 @@ class ApplicationExecutor:
 
         if checkpoint.runtime_id != execution_handle.runtime_id:
             raise ApplicationLifecycleError(
-                "Checkpoint runtime_id does not match Execution runtime_id: "
-                f"execution={execution_handle.runtime_id}, "
+                "Checkpoint runtime_id does not match Execution "
+                f"runtime_id: execution={execution_handle.runtime_id}, "
                 f"checkpoint={checkpoint.runtime_id}"
             )
 
         await self._application.checkpoint_store.save(
             checkpoint_id=checkpoint.checkpoint_id,
-            checkpoint=checkpoint
+            checkpoint=checkpoint,
         )
 
         execution.set_checkpoint(checkpoint_id=checkpoint.checkpoint_id)
@@ -183,81 +192,189 @@ class ApplicationExecutor:
             checkpoint: Checkpoint,
     ) -> ExecutionHandle:
         """
-        Recover an existing Execution from a Checkpoint.
+        Recover a low-level ExecutionHandle directly from a Checkpoint.
 
-        This method reconstructs the ExecutionHandle but does not
-        execute an Agent.
+        This method is intentionally retained as a low-level compatibility
+        API.
 
-        The caller owns the returned handle and is responsible
-        for closing it.
-
-        This is the low-level Application recovery primitive.
+        It does NOT represent durable Application-level recovery because
+        the Checkpoint alone does not contain the logical Execution ID.
         """
+
         execution = self._create_execution_from_checkpoint(checkpoint)
-        return self._execution_runtime.resume_execution(
-            execution=execution,
-            checkpoint=checkpoint
-        )
-
-    async def recover_persisted_execution(self, execution_id: str) -> ExecutionHandle:
-        """
-        Recover an Execution from durable ExecutionState and its
-        persisted Checkpoint.
-
-        The TaskRequest is intentionally not reconstructed here yet.
-
-        TaskStore is now responsible for durable TaskRequest storage,
-        while Task reconstruction and Agent resumption will be completed
-        in the subsequent recovery integration lesson.
-        """
-        state = await self._application.execution_store.load(execution_id)
-
-        if state is None:
-            raise ApplicationLifecycleError(
-                f"Execution not found: {execution_id}"
-            )
-
-        execution = Execution.from_state(state)
-
-        checkpoint_id = execution.current_checkpoint_id
-
-        if checkpoint_id is None:
-            raise ApplicationLifecycleError(
-                f"Execution does not have a recovery checkpoint: {execution_id}"
-            )
-
-        checkpoint = await self._application.checkpoint_store.load(checkpoint_id)
-
-        if checkpoint is None:
-            raise ApplicationLifecycleError(
-                f"Checkpoint not found for Execution {execution_id}: {checkpoint_id}"
-            )
-
-        if (checkpoint.task_id is not None
-                and checkpoint.task_id != execution.task_id):
-            raise ApplicationLifecycleError(
-                "Checkpoint task_id does not match Execution task_id: "
-                f"execution={execution.task_id}, "
-                f"checkpoint={checkpoint.task_id}"
-            )
 
         return self._execution_runtime.resume_execution(
             execution=execution,
             checkpoint=checkpoint
         )
+
+    async def recover_persisted_execution(self,execution_id: str) -> ExecutionHandle:
+        """
+        Reconstruct a live ExecutionHandle from durable state.
+
+        This method restores:
+
+            ExecutionState
+                ↓
+            Execution
+                ↓
+            Checkpoint
+                ↓
+            RuntimeContext
+
+        It does not execute the orchestration.
+
+        The returned handle is owned by the caller.
+        """
+        execution = await self._load_persisted_execution(execution_id)
+
+        checkpoint = await self._load_execution_checkpoint(execution)
+
+        return self._execution_runtime.resume_execution(
+            execution=execution,
+            checkpoint=checkpoint,
+        )
+
+    async def resume_persisted_execution(
+        self,
+        execution_id: str,
+    ) -> TaskResult:
+        """
+        Resume a durable Application Execution.
+
+        Recovery flow:
+
+            ExecutionStore
+                ↓
+            Execution
+                ↓
+            TaskStore
+                ↓
+            TaskRequest
+                ↓
+            CheckpointStore
+                ↓
+            Checkpoint
+                ↓
+            ExecutionRuntime
+                ↓
+            Orchestrator.resume()
+                ↓
+            AgentRuntime
+                ↓
+            TaskResult
+
+        The orchestration entry Agent is recovered from
+        Execution.metadata["orchestrator_agent_id"].
+
+        Recovery never selects a new default Agent.
+        """
+
+        execution = await self._load_persisted_execution(
+            execution_id
+        )
+
+        task = await self._load_execution_task(
+            execution
+        )
+
+        checkpoint = await self._load_execution_checkpoint(
+            execution
+        )
+
+        entry_agent_id = execution.metadata.get(
+            SingleAgentOrchestrator.ENTRY_AGENT_METADATA_KEY
+        )
+
+        if not entry_agent_id:
+            raise ApplicationLifecycleError(
+                "Persisted Execution does not contain an "
+                "orchestration entry Agent: "
+                f"{execution.execution_id}"
+            )
+
+        if entry_agent_id not in checkpoint.agents:
+            raise ApplicationLifecycleError(
+                "Checkpoint does not contain the persisted "
+                "orchestration entry Agent: "
+                f"{entry_agent_id}"
+            )
+
+        if execution.status in {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+        }:
+            raise ApplicationLifecycleError(
+                "Cannot resume a terminal Execution: "
+                f"{execution.execution_id}, "
+                f"status={execution.status.value}"
+            )
+
+        execution_handle = self._execution_runtime.resume_execution(
+            execution=execution,
+            checkpoint=checkpoint,
+        )
+
+        try:
+            if execution.status == ExecutionStatus.PAUSED:
+                execution.resume()
+                await self._persist_execution(execution)
+
+            elif execution.status != ExecutionStatus.RUNNING:
+                raise ApplicationLifecycleError(
+                    "Execution is not resumable: "
+                    f"{execution.execution_id}, "
+                    f"status={execution.status.value}"
+                )
+
+            orchestration_result = await self._orchestrator.resume(
+                task=task,
+                execution_handle=execution_handle,
+                checkpoint=checkpoint,
+                entry_agent_id=entry_agent_id,
+            )
+
+            result = self._to_task_result(
+                task=task,
+                agent=orchestration_result.agent,
+                agent_result=orchestration_result.agent_result,
+            )
+
+            execution.complete()
+
+            await self._persist_execution(execution)
+
+            return result
+
+        except BaseException:
+            if not execution.is_terminal:
+                execution.fail()
+
+                await self._persist_execution(execution)
+
+            raise
+
+        finally:
+            await execution_handle.close()
 
     async def recover_agent_execution(
-            self,
-            checkpoint: Checkpoint,
-            agent_id: str,
-            task: TaskRequest,
+        self,
+        checkpoint: Checkpoint,
+        agent_id: str,
+        task: TaskRequest,
     ) -> AgentResult:
         """
-        Resume one Agent execution from a Checkpoint.
+        Resume one Agent directly from a Checkpoint.
+
+        This remains a low-level compatibility API.
+
+        Durable Application recovery should use
+        resume_persisted_execution().
         """
 
         execution_handle = await self.recover_execution(
-            checkpoint=checkpoint
+            checkpoint=checkpoint,
         )
 
         try:
@@ -287,36 +404,135 @@ class ApplicationExecutor:
                 execution_handle.runtime_context,
                 agent_execution_context,
             )
+
         finally:
             await execution_handle.close()
 
+    async def _load_persisted_execution(
+        self,
+        execution_id: str,
+    ) -> Execution:
+        state = await self._application.execution_store.load(
+            execution_id
+        )
+
+        if state is None:
+            raise ApplicationLifecycleError(
+                f"Execution not found: {execution_id}"
+            )
+
+        execution = Execution.from_state(state)
+
+        if execution.current_checkpoint_id is None:
+            raise ApplicationLifecycleError(
+                "Execution does not have a recovery checkpoint: "
+                f"{execution_id}"
+            )
+
+        return execution
+
+    async def _load_execution_task(
+        self,
+        execution: Execution,
+    ) -> TaskRequest:
+        if execution.task_id is None:
+            raise ApplicationLifecycleError(
+                "Execution does not contain a task_id: "
+                f"{execution.execution_id}"
+            )
+
+        task = await self._application.task_store.load(
+            execution.task_id
+        )
+
+        if task is None:
+            raise ApplicationLifecycleError(
+                "Task not found for Execution: "
+                f"execution={execution.execution_id}, "
+                f"task={execution.task_id}"
+            )
+
+        if task.task_id != execution.task_id:
+            raise ApplicationLifecycleError(
+                "Loaded TaskRequest does not match Execution task_id: "
+                f"execution={execution.task_id}, "
+                f"task={task.task_id}"
+            )
+
+        return task
+
+    async def _load_execution_checkpoint(
+        self,
+        execution: Execution,
+    ) -> Checkpoint:
+        checkpoint_id = execution.current_checkpoint_id
+
+        if checkpoint_id is None:
+            raise ApplicationLifecycleError(
+                "Execution does not have a recovery checkpoint: "
+                f"{execution.execution_id}"
+            )
+
+        checkpoint = await self._application.checkpoint_store.load(
+            checkpoint_id
+        )
+
+        if checkpoint is None:
+            raise ApplicationLifecycleError(
+                "Checkpoint not found for Execution: "
+                f"{execution.execution_id}: {checkpoint_id}"
+            )
+
+        if (
+            checkpoint.task_id is not None
+            and checkpoint.task_id != execution.task_id
+        ):
+            raise ApplicationLifecycleError(
+                "Checkpoint task_id does not match Execution task_id: "
+                f"execution={execution.task_id}, "
+                f"checkpoint={checkpoint.task_id}"
+            )
+
+        return checkpoint
+
     def _create_execution(
-            self,
-            task: TaskRequest,
+        self,
+        task: TaskRequest,
+        entry_agent_id: str,
     ) -> Execution:
         """
         Create the logical Execution object.
 
-        Execution is reconstructed from its durable initial state.
+        The orchestration entry Agent identity is part of durable
+        Execution metadata.
 
-        The logical Execution identity is independent from the
-        RuntimeContext.runtime_id owned by ExecutionRuntime.
+        It is deliberately NOT stored in Checkpoint.
         """
+
         return Execution(
             execution_id=str(uuid4()),
             task_id=task.task_id,
             session_id=task.session_id,
+            metadata={
+                SingleAgentOrchestrator.ENTRY_AGENT_METADATA_KEY:
+                    entry_agent_id,
+            },
         )
 
-    def _create_execution_from_checkpoint(self, checkpoint: Checkpoint) -> Execution:
+    def _create_execution_from_checkpoint(
+        self,
+        checkpoint: Checkpoint,
+    ) -> Execution:
         """
         Deprecated low-level recovery helper.
 
-        This path exists for direct Checkpoint recovery.
+        A direct Checkpoint does not contain the logical Execution
+        identity, therefore this method creates a synthetic Execution.
 
-        Full TaskRequest reconstruction belongs to the durable
-        recovery path and will use TaskStore.
+        Application-level recovery must use
+        resume_persisted_execution().
         """
+
         now = datetime.now(timezone.utc)
 
         state = ExecutionState(
@@ -330,49 +546,32 @@ class ApplicationExecutor:
         return Execution.from_state(state)
 
     async def _persist_execution(
-            self,
-            execution: Execution,
+        self,
+        execution: Execution,
     ) -> None:
         """
         Persist the durable representation of a logical Execution.
-
-        The Persistence layer receives ExecutionState only.
         """
+
         await self._application.execution_store.save(
             execution.snapshot()
         )
 
     async def _persist_task(
-            self,
-            task: TaskRequest,
+        self,
+        task: TaskRequest,
     ) -> None:
         """
         Persist the durable input of the logical Execution.
         """
+
         await self._application.task_store.save(task)
 
-    def _select_default_agent(self) -> BaseAgent:
-        agents = self._application.agents
-
-        if not agents:
-            raise ApplicationLifecycleError(
-                "Application cannot execute a task because no Agent "
-                "is registered."
-            )
-
-        if len(agents) > 1:
-            raise ApplicationLifecycleError(
-                "Application cannot select a default Agent because "
-                "multiple Agents are registered."
-            )
-
-        return agents[0]
-
     def _to_task_result(
-            self,
-            task: TaskRequest,
-            agent: BaseAgent,
-            agent_result: AgentResult,
+        self,
+        task: TaskRequest,
+        agent: BaseAgent,
+        agent_result: AgentResult,
     ) -> TaskResult:
         return TaskResult(
             success=agent_result.success,

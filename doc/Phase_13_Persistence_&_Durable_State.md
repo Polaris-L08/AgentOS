@@ -1667,3 +1667,82 @@ execute(
 当前 `ApplicationExecutor` 自己也明确保留了这个边界：`recover_agent_execution()` 接收 `TaskRequest`，
 
 而 `recover_persisted_execution()` 目前还没有从 TaskStore 加载它。
+
+
+## Lesson 19: Durable Recovery Integration
+
+> 而是把现有的 recover_persisted_execution() 真正接入 Application 的执行生命周期。
+>
+> Recovery 最终必须回到 Application 层，并产生与正常执行一致的 TaskResult。
+
+最终形成：
+
+```text
+Application.execute(task)
+    ↓
+创建新的 Execution
+    ↓
+正常执行
+```
+
+以及：
+
+```text
+Application.resume(execution_id)
+    ↓
+ExecutionStore
+    ↓
+CheckpointStore
+    ↓
+TaskStore
+    ↓
+恢复 Execution + RuntimeContext
+    ↓
+恢复 AgentExecutionContext
+    ↓
+Execution.resume()
+    ↓
+Application.invoke_agent(...)
+    ↓
+AgentRuntime.execute(...)
+    ↓
+Execution.complete()
+    ↓
+TaskResult
+```
+
+### 19.1: 建立 Orchestration Boundary
+
+> 恢复不再是 Checkpoint → Default Agent，而是 Execution → Task → Checkpoint → Orchestration Entry → AgentRuntime → Continue。
+
+因为恢复过程需要确定当前的Agent编排执行装填，才能确定下一步要怎样执行。
+
+因此需要Orchestration，但是当前项目中Orchestration是由SupervisorAgent决定的，为了兼容性考虑，引入统一的Orchestration Layer。
+
+形成：
+
+```text
+Application
+    │
+    ▼
+Execution
+    │
+    ▼
+ExecutionRuntime
+    │
+    ▼
+Orchestration
+    │
+    ├── Supervisor Strategy
+    ├── Native Workflow Strategy
+    └── Future LangGraph Adapter
+    │
+    ▼
+AgentRuntime
+    │
+    ├── Agent
+    ├── Tool
+    ├── LLM
+    └── Memory
+```
+
