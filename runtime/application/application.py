@@ -419,8 +419,10 @@ class AgentApplication:
         """
         Invoke an Agent through AgentRuntime.
 
+        This is an Application-level compatibility facade.
+
         Application owns:
-            - lifecycle validation
+            - Application lifecycle validation
             - Agent resolution
             - Application middleware
 
@@ -430,9 +432,8 @@ class AgentApplication:
             - Agent middleware
             - Agent lifecycle events
 
-        This method remains as an Application-level compatibility
-        facade. Orchestrator implementations should call
-        AgentRuntime directly instead.
+        Orchestrators must call AgentRuntime directly rather than
+        calling this Application facade.
         """
 
         self._require_state(ApplicationState.RUNNING)
@@ -451,10 +452,10 @@ class AgentApplication:
         )
 
         if self._middleware_chain is None:
-            return await self._invoke_agent(
-                agent,
-                task,
-                execution_handle,
+            return await self.agent_runtime.execute(
+                agent=agent,
+                task=task,
+                runtime_context=execution_handle.runtime_context,
             )
 
         await self._middleware_chain.before(
@@ -463,10 +464,10 @@ class AgentApplication:
         )
 
         try:
-            result = await self._invoke_agent(
-                agent,
-                task,
-                execution_handle,
+            result = await self.agent_runtime.execute(
+                agent=agent,
+                task=task,
+                runtime_context=execution_handle.runtime_context,
             )
         except Exception as error:
             await self._middleware_chain.on_error(
@@ -482,18 +483,6 @@ class AgentApplication:
                 result,
             )
             return result
-
-    async def _invoke_agent(
-        self,
-        agent: BaseAgent,
-        task: TaskRequest,
-        execution_handle: ExecutionHandle,
-    ) -> AgentResult:
-        return await self.agent_runtime.execute(
-            agent=agent,
-            task=task,
-            runtime_context=execution_handle.runtime_context,
-        )
 
     # ------------------------------------------------------------------
     # Internal component lifecycle

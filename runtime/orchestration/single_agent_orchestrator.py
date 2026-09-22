@@ -3,11 +3,9 @@ from __future__ import annotations
 from agents.base_agent import BaseAgent
 from models.task_request import TaskRequest
 from runtime.agents.agent_registry import AgentRegistry
-from runtime.application.application_lifecycle import (
-    ApplicationLifecycleError,
-)
 from runtime.checkpoint import Checkpoint
 from runtime.execution import AgentRuntime, ExecutionHandle
+from runtime.orchestration.orchestration_error import OrchestrationError
 
 from runtime.orchestration.orchestrator import (
     OrchestrationResult,
@@ -54,13 +52,13 @@ class SingleAgentOrchestrator(Orchestrator):
         agents = self._agent_registry.all()
 
         if not agents:
-            raise ApplicationLifecycleError(
+            raise OrchestrationError(
                 "Application cannot execute a task because no Agent "
                 "is registered."
             )
 
         if len(agents) > 1:
-            raise ApplicationLifecycleError(
+            raise OrchestrationError(
                 "SingleAgentOrchestrator cannot resolve an entry Agent "
                 "because multiple Agents are registered. "
                 "Configure a concrete orchestration strategy."
@@ -109,7 +107,7 @@ class SingleAgentOrchestrator(Orchestrator):
         )
 
         if agent_checkpoint is None:
-            raise ApplicationLifecycleError(
+            raise OrchestrationError(
                 "Checkpoint does not contain an AgentCheckpoint "
                 f"for orchestration entry Agent: {entry_agent_id}"
             )

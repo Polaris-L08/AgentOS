@@ -3,7 +3,9 @@ import pytest
 from agents.base_agent import BaseAgent
 from agents.identity import AgentIdentity
 from models.task_request import TaskRequest
+from runtime.agents import AgentRegistry
 from runtime.application.application import AgentApplication
+from runtime.execution import Execution
 from runtime.execution.agent_runtime import AgentRuntime
 from runtime.execution.execution_handle import ExecutionHandle
 from runtime.execution.execution_runtime import ExecutionRuntime
@@ -36,7 +38,7 @@ def create_application() -> AgentApplication:
         name="Test Application",
         agent_runtime=agent_runtime,
         execution_runtime=execution_runtime,
-        agents=[agent],
+        agent_registry=AgentRegistry([agent]),
     )
 
 
@@ -273,20 +275,94 @@ async def test_execution_can_be_closed_after_agent_invocation():
     await application.initialize()
     await application.start()
 
-    execution = application.execution_runtime.create_execution()
-
     task = TaskRequest(
         task_id="task-1",
         user_input="hello",
     )
 
+    execution = Execution(
+        execution_id="execution-id",
+        task_id=task.task_id,
+        session_id=task.session_id,
+    )
+    execution_handle = application.execution_runtime.create_execution(execution)
+
     await application.invoke_agent(
         agent_id="agent-1",
         task=task,
-        execution_handle=execution,
+        execution_handle=execution_handle,
     )
 
-    await execution.close()
+    await execution_handle.close()
 
-    assert execution.closed is True
-    assert execution.runtime_context.trace.trace.end_time is not None
+    assert execution_handle.closed is True
+    assert execution_handle.runtime_context.trace.trace.end_time is not None
+
+
+@pytest.mark.asyncio
+async def test_application_invoke_agent_delegates_to_agent_runtime():
+    application = create_application()
+
+    await application.initialize()
+    await application.start()
+
+    task = TaskRequest(
+        task_id="task-1",
+        user_input="hello",
+    )
+    execution = Execution(
+        execution_id="execution-id",
+        task_id=task.task_id,
+        session_id=task.session_id,
+    )
+
+    execution_handle = application.execution_runtime.create_execution(execution)
+
+    original_execute = application.agent_runtime.execute
+
+    calls = []
+
+    async def recording_execute(
+        *,
+        agent,
+        task,
+        runtime_context,
+        agent_execution_context=None,
+    ):
+        calls.append(
+            {
+                "agent": agent,
+                "task": task,
+                "runtime_context": runtime_context,
+                "agent_execution_context": (
+                    agent_execution_context
+                ),
+            }
+        )
+
+        return await original_execute(
+            agent=agent,
+            task=task,
+            runtime_context=runtime_context,
+            agent_execution_context=agent_execution_context,
+        )
+
+    application.agent_runtime.execute = recording_execute
+
+    result = await application.invoke_agent(
+        agent_id="agent-1",
+        task=task,
+        execution_handle=execution_handle,
+    )
+
+    assert result.success is True
+
+    assert len(calls) == 1
+    assert calls[0]["agent"] is application.get_agent(
+        "agent-1"
+    )
+    assert calls[0]["task"] is task
+    assert (
+        calls[0]["runtime_context"]
+        is execution_handle.runtime_context
+    )
