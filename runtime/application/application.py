@@ -317,48 +317,13 @@ class AgentApplication:
         )
 
     # ------------------------------------------------------------------
-    # Agent ownership
+    # Agent registry
     # ------------------------------------------------------------------
 
-    def add_agent(
-        self,
-        agent: BaseAgent,
-    ) -> None:
-        """
-        Register an Agent through the Application's AgentRegistry.
+    def get_agent(self, agent_id: str) -> BaseAgent:
+        return self._agent_registry.get(agent_id)
 
-        The Application remains the public ownership boundary while
-        AgentRegistry owns the actual Agent collection.
-        """
-
-        try:
-            self._agent_registry.register(agent)
-        except ValueError as error:
-            raise ValueError(
-                "Agent already exists in Application: "
-                f"{agent.identity.agent_id}"
-            ) from error
-
-    def get_agent(
-        self,
-        agent_id: str,
-    ) -> BaseAgent:
-        """
-        Resolve an Agent through AgentRegistry.
-        """
-
-        try:
-            return self._agent_registry.get(agent_id)
-        except KeyError:
-            raise KeyError(
-                "Agent not found in Application: "
-                f"{agent_id}"
-            ) from None
-
-    def has_agent(
-        self,
-        agent_id: str,
-    ) -> bool:
+    def has_agent(self, agent_id: str) -> bool:
         return self._agent_registry.has(agent_id)
 
     # ------------------------------------------------------------------
