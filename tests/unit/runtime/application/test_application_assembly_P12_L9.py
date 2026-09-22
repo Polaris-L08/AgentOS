@@ -436,3 +436,38 @@ async def test_assembled_application_can_invoke_agent():
 
     await execution_handle.close()
     await application.stop()
+
+
+def test_assembly_wires_shared_agent_registry_into_orchestrator():
+    agent_runtime, execution_runtime, _ = (
+        create_runtime_components()
+    )
+
+    agent = create_agent("agent-1")
+
+    application = (
+        ApplicationAssembly(create_config())
+        .register_component(
+            "agent_runtime",
+            agent_runtime,
+        )
+        .register_component(
+            "execution_runtime",
+            execution_runtime,
+        )
+        .add_agent(agent)
+        .build()
+    )
+
+    assert application.agent_registry is not None
+    assert application.orchestrator is not None
+
+    assert (
+        application.orchestrator.agent_registry
+        is application.agent_registry
+    )
+
+    assert (
+        application.orchestrator.agent_runtime
+        is application.agent_runtime
+    )

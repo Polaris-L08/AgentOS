@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from models.task_result import TaskResult
+from runtime.agents.agent_registry import AgentRegistry
 from runtime.application.application_component import ApplicationComponent
 from runtime.application.application_executor import ApplicationExecutor
 from runtime.application.application_lifecycle import (
@@ -18,7 +19,10 @@ from runtime.events.event import Event
 from runtime.events.publisher import EventPublisher
 from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
-from runtime.orchestration import Orchestrator
+from runtime.orchestration import (
+    Orchestrator,
+    SingleAgentOrchestrator,
+)
 from runtime.persistence import (
     ExecutionStore,
     InMemoryExecutionStore,
@@ -48,7 +52,7 @@ class AgentApplication:
     Application-level runtime boundary.
 
     AgentApplication owns:
-        - Agents
+        - AgentRegistry
         - AgentRuntime
         - ExecutionRuntime
         - Orchestrator
@@ -58,6 +62,10 @@ class AgentApplication:
 
     AgentApplication coordinates runtime components but does not
     implement Agent execution logic itself.
+
+    Agent registration and lookup are delegated to AgentRegistry.
+    The existing add_agent(), get_agent(), has_agent(), and agents
+    APIs remain as Application-level facade methods for compatibility.
     """
 
     def __init__(
@@ -66,7 +74,7 @@ class AgentApplication:
         name: str,
         agent_runtime: AgentRuntime,
         execution_runtime: ExecutionRuntime,
-        agents: list[BaseAgent] | None = None,
+        agent_registry: AgentRegistry | None = None,
         session_manager: SessionManager | None = None,
         publisher: EventPublisher | None = None,
         middleware_chain: MiddlewareChain | None = None,
@@ -78,18 +86,30 @@ class AgentApplication:
         orchestrator: Orchestrator | None = None,
         owned_persistence_resources: tuple[
             PostgresDatabase,
-            ...
+            ...,
         ] | None = None,
     ) -> None:
         self.application_id = application_id
         self.name = name
         self.agent_runtime = agent_runtime
         self.execution_runtime = execution_runtime
-        self.session_manager = session_manager or SessionManager()
 
-        self.session_store = session_store or InMemorySessionStore()
-        self.execution_store = execution_store or InMemoryExecutionStore()
-        self.task_store = task_store or InMemoryTaskStore()
+        self.session_manager = (
+            session_manager or SessionManager()
+        )
+
+        self.session_store = (
+            session_store or InMemorySessionStore()
+        )
+
+        self.execution_store = (
+            execution_store or InMemoryExecutionStore()
+        )
+
+        self.task_store = (
+            task_store or InMemoryTaskStore()
+        )
+
         self.checkpoint_store = (
             checkpoint_store or MemoryCheckpointStore()
         )
@@ -98,6 +118,7 @@ class AgentApplication:
             owned_persistence_resources or ()
         )
         self._persistence_resources_closed = False
+
         self._publisher = publisher
         self._middleware_chain = middleware_chain
 
@@ -111,13 +132,18 @@ class AgentApplication:
             tuple[str, ApplicationComponent]
         ] = []
 
-        self._agents: dict[str, BaseAgent] = {}
-        self._state = ApplicationState.CREATED
+        self._agent_registry = (
+            agent_registry or AgentRegistry()
+        )
 
-        for agent in agents or []:
-            self.add_agent(agent)
+        if orchestrator is None:
+            orchestrator = SingleAgentOrchestrator(
+                agent_registry=self._agent_registry,
+                agent_runtime=self.agent_runtime,
+            )
 
         self._orchestrator = orchestrator
+        self._state = ApplicationState.CREATED
 
         self._executor = ApplicationExecutor(
             application=self,
@@ -139,7 +165,11 @@ class AgentApplication:
 
     @property
     def agents(self) -> tuple[BaseAgent, ...]:
-        return tuple(self._agents.values())
+        return self._agent_registry.all()
+
+    @property
+    def agent_registry(self) -> AgentRegistry:
+        return self._agent_registry
 
     @property
     def orchestrator(self) -> Orchestrator | None:
@@ -152,7 +182,9 @@ class AgentApplication:
     async def initialize(self) -> None:
         self._require_state(ApplicationState.CREATED)
 
-        initialized: list[tuple[str, ApplicationComponent]] = []
+        initialized: list[
+            tuple[str, ApplicationComponent]
+        ] = []
 
         try:
             for name, component in self._lifecycle_components():
@@ -170,14 +202,18 @@ class AgentApplication:
     async def start(self) -> None:
         self._require_state(ApplicationState.INITIALIZED)
 
-        started: list[tuple[str, ApplicationComponent]] = []
+        started: list[
+            tuple[str, ApplicationComponent]
+        ] = []
 
         try:
             for name, component in self._initialized_components:
                 await component.start()
                 started.append((name, component))
         except BaseException:
-            await self._rollback_started_components(started)
+            await self._rollback_started_components(
+                started
+            )
             raise
 
         self._started_components = started
@@ -244,9 +280,11 @@ class AgentApplication:
         """
         Resume a persisted logical Execution.
 
-        This is the public Application-level crash/restart recovery API.
+        This is the public Application-level crash/restart
+        recovery API.
 
-        The caller provides only the durable logical Execution identity.
+        The caller provides only the durable logical Execution
+        identity.
 
         ApplicationExecutor reconstructs:
             Execution
@@ -282,26 +320,46 @@ class AgentApplication:
     # Agent ownership
     # ------------------------------------------------------------------
 
-    def add_agent(self, agent: BaseAgent) -> None:
-        agent_id = agent.identity.agent_id
+    def add_agent(
+        self,
+        agent: BaseAgent,
+    ) -> None:
+        """
+        Register an Agent through the Application's AgentRegistry.
 
-        if agent_id in self._agents:
-            raise ValueError(
-                f"Agent already exists in Application: {agent_id}"
-            )
+        The Application remains the public ownership boundary while
+        AgentRegistry owns the actual Agent collection.
+        """
 
-        self._agents[agent_id] = agent
-
-    def get_agent(self, agent_id: str) -> BaseAgent:
         try:
-            return self._agents[agent_id]
+            self._agent_registry.register(agent)
+        except ValueError as error:
+            raise ValueError(
+                "Agent already exists in Application: "
+                f"{agent.identity.agent_id}"
+            ) from error
+
+    def get_agent(
+        self,
+        agent_id: str,
+    ) -> BaseAgent:
+        """
+        Resolve an Agent through AgentRegistry.
+        """
+
+        try:
+            return self._agent_registry.get(agent_id)
         except KeyError:
             raise KeyError(
-                f"Agent not found in Application: {agent_id}"
+                "Agent not found in Application: "
+                f"{agent_id}"
             ) from None
 
-    def has_agent(self, agent_id: str) -> bool:
-        return agent_id in self._agents
+    def has_agent(
+        self,
+        agent_id: str,
+    ) -> bool:
+        return self._agent_registry.has(agent_id)
 
     # ------------------------------------------------------------------
     # Session validation
@@ -404,6 +462,10 @@ class AgentApplication:
             - Agent execution
             - Agent middleware
             - Agent lifecycle events
+
+        This method remains as an Application-level compatibility
+        facade. Orchestrator implementations should call
+        AgentRuntime directly instead.
         """
 
         self._require_state(ApplicationState.RUNNING)
@@ -472,7 +534,10 @@ class AgentApplication:
 
     def _lifecycle_components(
         self,
-    ) -> tuple[tuple[str, ApplicationComponent], ...]:
+    ) -> tuple[
+        tuple[str, ApplicationComponent],
+        ...
+    ]:
         result: list[
             tuple[str, ApplicationComponent]
         ] = []

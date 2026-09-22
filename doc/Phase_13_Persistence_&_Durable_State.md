@@ -1746,3 +1746,264 @@ AgentRuntime
     └── Memory
 ```
 
+
+## 代码审查
+
+当前代码问题：
+
+ - AgentApplication ↔ ApplicationExecutor 双向依赖；
+ - Orchestrator → AgentApplication → AgentRuntime 形成反向调用链；
+ - recover_* / resume_* / ExecutionRuntime.resume_execution() 语义没有统一；
+ - ApplicationExecutor 已经开始承担“Application Service + Recovery Coordinator + Persistence Coordinator”三种职责；
+ - Application 既是 Facade，又是 Registry，又是 Agent invocation service，又持有所有 Persistence Store。
+
+### 再次区分语义
+
+#### Application
+
+> 一个可运行的 AgentOS 应用容器 / 对外入口。
+
+> “这个应用是什么？有哪些 Agent？有哪些 Runtime 组件？如何启动、停止、接受请求？”
+
+#### Execution
+
+> 一次 User Request 的逻辑执行记录。
+
+> “这一请求是谁、当前处于什么状态、关联哪个 Task、当前 Checkpoint 是什么？”
+
+#### ExecutionRuntime
+
+> 让一个 Execution 真正获得运行时环境。
+
+> 它负责创建/恢复 Runtime Context，但不负责 Application、Session、Agent、Memory。
+
+#### Orchestrator
+
+> 决定 Agent/步骤如何被执行。
+
+### 目标结构
+
+```text
+                         ┌────────────────────┐
+                         │  AgentApplication   │
+                         │                    │
+                         │ Public API         │
+                         │ Lifecycle          │
+                         │ Component Ownership│
+                         └─────────┬──────────┘
+                                   │
+                                   ▼
+                       ┌───────────────────────┐
+                       │ ExecutionCoordinator  │
+                       │                       │
+                       │ execute()             │
+                       │ resume()              │
+                       └───────┬───────┬───────┘
+                               │       │
+                ┌──────────────┘       └───────────────┐
+                ▼                                       ▼
+       ┌─────────────────┐                    ┌─────────────────┐
+       │ ExecutionRuntime│                    │  Orchestrator   │
+       │                 │                    │                 │
+       │ create          │                    │ decide          │
+       │ restore         │                    │ execute         │
+       │ close           │                    │ resume          │
+       └────────┬────────┘                    └───────┬─────────┘
+                │                                     │
+                ▼                                     ▼
+       ExecutionHandle                        AgentRegistry
+                │                                     │
+                ▼                                     ▼
+        RuntimeContext                         AgentRuntime
+                                                      │
+                                                      ▼
+                                                    Agent
+```
+
+| Class                     | 当前判断           | 后续                                  |
+|---------------------------|--------------------|---------------------------------------|
+| `AgentApplication`        | **保留**           | 减少行为职责                          |
+| `ApplicationExecutor`     | **保留但重构**     | 收敛为 Execution coordination         |
+| `ApplicationAssembly`     | **保留**           | 继续作为 Composition Root             |
+| `ComponentRegistry`       | **保留**           | 不承担 Agent Registry                 |
+| `Execution`               | **保留**           | 基本不动                              |
+| `ExecutionState`          | **保留**           | 暂不扩张                              |
+| `ExecutionRuntime`        | **保留**           | 明确 restore/resume 语义              |
+| `ExecutionHandle`         | **保留**           | 基本不动                              |
+| `AgentRuntime`            | **保留**           | 基本不动                              |
+| `Orchestrator`            | **保留并解耦**     | 去掉 Application 依赖                 |
+| `SingleAgentOrchestrator` | **保留**           | 改为依赖 Registry + AgentRuntime      |
+| Agent registry            | **新增小边界**     | 从 Application Agent ownership 中抽出 |
+| `SessionManager`          | **保留**           | 不与 Recovery 混合                    |
+| `*Store`                  | **保留**           | Persistence boundary 不变             |
+| `recover_*`               | **逐步淘汰**       | 新 API 不再使用                       |
+| `resume_*`                | **保留但统一语义** | 只表示继续执行                        |
+
+
+
+### AgentApplication 的新定位
+
+> Application-level runtime boundary
+
+```text
+AgentApplication
+=
+Application Facade
++
+Lifecycle Owner
++
+Component Owner
+```
+
+#### Application 最终保留这些 API
+
+**生命周期**
+
+```text
+initialize()
+start()
+stop()
+```
+
+**Application execution**
+
+```text
+execute(task)
+resume_execution(execution_id)
+```
+
+**Session**
+
+```text
+create_session()
+get_session()
+has_session()
+delete_session()
+persist_session()
+```
+
+**Agent registration**
+
+可以继续：
+
+```text
+add_agent()
+get_agent()
+has_agent()
+```
+
+但是内部实现逐渐委托给 AgentRegistry。
+
+**Checkpoint**
+
+这里暂时保留：`persist_checkpoint(...)`
+
+因为这是一个 Application-facing API。 但具体持久化协调应该逐渐移入 Executor / Coordinator。
+
+#### Application 应该删除/迁移的职责
+
+```text
+invoke_agent()
+_invoke_agent()
+```
+
+因为当前链路：
+
+```text
+SingleAgentOrchestrator
+        ↓
+Application.invoke_agent()
+        ↓
+Application._invoke_agent()
+        ↓
+AgentRuntime.execute()
+```
+
+已经产生了职责穿透。
+
+目标应该变成：
+
+```text
+SingleAgentOrchestrator
+        ↓
+AgentRegistry
+        ↓
+AgentRuntime
+```
+
+### 确认引入 AgentRegistry
+
+### 重构后的概念图
+
+```text
+                         ┌──────────────────┐
+                         │ AgentApplication │
+                         │                  │
+                         │ Lifecycle        │
+                         │ Public API       │
+                         │ Session          │
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                      ┌─────────────────────┐
+                      │ ApplicationExecutor │
+                      │                     │
+                      │ execute             │
+                      │ resume_execution    │
+                      │ persist_checkpoint  │
+                      └───────┬──────┬──────┘
+                              │      │
+                    ┌─────────┘      └─────────┐
+                    ▼                          ▼
+             ExecutionRuntime            Orchestrator
+                    │                          │
+                    ▼                  ┌───────┴────────┐
+             ExecutionHandle           ▼                ▼
+                    │             AgentRegistry    AgentRuntime
+                    ▼                  │                │
+             RuntimeContext            └───────┬────────┘
+                                               ▼
+                                              Agent
+```
+
+| 动词      | 含义                            |
+|-----------|---------------------------------|
+| `load`    | 从 Store 读取持久化数据         |
+| `restore` | 从持久化数据重建内存/运行时对象 |
+| `resume`  | 真正继续执行                    |
+
+所以目标语义：
+
+```text
+load Execution
+load Task
+load Checkpoint
+        ↓
+restore ExecutionHandle
+        ↓
+resume Execution
+```
+
+### 最终迁移矩阵
+
+| 文件 / 类                           | 当前问题                              | 修改后                         |
+|-------------------------------------|---------------------------------------|--------------------------------|
+| `application.py / AgentApplication` | 持有 `_agents`                        | 委托 `AgentRegistry`           |
+| `application.py / AgentApplication` | 创建 Executor 时传 `self`             | 显式注入 Executor dependencies |
+| `application.py / AgentApplication` | `invoke_agent()` 被 Orchestrator 使用 | 暂留兼容 API，内部不再使用     |
+| `application.py / AgentApplication` | Agent 查询                            | 委托 Registry                  |
+| `application_executor.py`           | 持有 `Application`                    | 删除                           |
+| `application_executor.py`           | Store 从 Application 获取             | 显式 Store                     |
+| `application_executor.py`           | Agent recovery                        | 最终删除/降级兼容              |
+| `application_executor.py`           | `recover_persisted_execution()`       | 改为 restore 语义              |
+| `application_executor.py`           | `resume_persisted_execution()`        | 统一 `resume_execution()`      |
+| `orchestrator.py`                   | 持有 Application                      | `AgentRegistry + AgentRuntime` |
+| `single_agent_orchestrator.py`      | `application.agents`                  | `agent_registry.all()`         |
+| `single_agent_orchestrator.py`      | `application.get_agent()`             | `agent_registry.get()`         |
+| `single_agent_orchestrator.py`      | `application.invoke_agent()`          | `agent_runtime.execute()`      |
+| `single_agent_orchestrator.py`      | `application.agent_runtime`           | 注入 `AgentRuntime`            |
+| `application_assembly.py`           | 组装旧 Orchestrator                   | 组装 Registry + Orchestrator   |
+| `execution_runtime.py`              | `resume_execution` 名义不够准确       | 本轮暂不改                     |
+| `Execution`                         | entry agent metadata                  | 保留                           |
+| `Checkpoint`                        | 无 execution_id                       | 保持不变                       |
+

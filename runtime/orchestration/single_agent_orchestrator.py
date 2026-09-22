@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from agents.base_agent import BaseAgent
 from models.task_request import TaskRequest
+from runtime.agents.agent_registry import AgentRegistry
 from runtime.application.application_lifecycle import (
     ApplicationLifecycleError,
 )
 from runtime.checkpoint import Checkpoint
-from runtime.execution import ExecutionHandle
+from runtime.execution import AgentRuntime, ExecutionHandle
 
 from runtime.orchestration.orchestrator import (
     OrchestrationResult,
@@ -32,14 +33,25 @@ class SingleAgentOrchestrator(Orchestrator):
 
     This class does NOT mean that AgentOS is limited to one Agent.
 
-    It provides the orchestration boundary required by ApplicationExecutor
-    while preserving the current SupervisorAgent implementation.
+    It provides the orchestration boundary required by
+    ApplicationExecutor while preserving the current SupervisorAgent
+    implementation.
     """
 
     ENTRY_AGENT_METADATA_KEY = "orchestrator_agent_id"
 
+    def __init__(
+        self,
+        agent_registry: AgentRegistry,
+        agent_runtime: AgentRuntime,
+    ) -> None:
+        super().__init__(
+            agent_registry=agent_registry,
+            agent_runtime=agent_runtime,
+        )
+
     def resolve_entry_agent(self) -> BaseAgent:
-        agents = self._application.agents
+        agents = self._agent_registry.all()
 
         if not agents:
             raise ApplicationLifecycleError(
@@ -63,10 +75,10 @@ class SingleAgentOrchestrator(Orchestrator):
     ) -> OrchestrationResult:
         agent = self.resolve_entry_agent()
 
-        result = await self._application.invoke_agent(
-            agent_id=agent.identity.agent_id,
+        result = await self._agent_runtime.execute(
+            agent=agent,
             task=task,
-            execution_handle=execution_handle,
+            runtime_context=execution_handle.runtime_context,
         )
 
         return OrchestrationResult(
@@ -84,13 +96,13 @@ class SingleAgentOrchestrator(Orchestrator):
         """
         Resume the persisted orchestration entry Agent.
 
-        The Agent is identified by the durable Execution metadata.
+        The Agent is identified by durable Execution metadata.
 
         Its execution-local state is restored from the corresponding
         AgentCheckpoint before AgentRuntime.execute() continues.
         """
 
-        agent = self._application.get_agent(entry_agent_id)
+        agent = self._agent_registry.get(entry_agent_id)
 
         agent_checkpoint = checkpoint.agents.get(
             entry_agent_id
@@ -103,14 +115,14 @@ class SingleAgentOrchestrator(Orchestrator):
             )
 
         agent_execution_context = (
-            self._application.agent_runtime.restore_execution_context(
+            self._agent_runtime.restore_execution_context(
                 runtime_context=execution_handle.runtime_context,
                 agent=agent,
                 checkpoint=agent_checkpoint,
             )
         )
 
-        result = await self._application.agent_runtime.execute(
+        result = await self._agent_runtime.execute(
             agent=agent,
             task=task,
             runtime_context=execution_handle.runtime_context,

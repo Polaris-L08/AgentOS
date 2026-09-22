@@ -3,12 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 from agents.base_agent import BaseAgent
-from runtime.application.component_registry import ComponentRegistry
+from runtime.agents.agent_registry import AgentRegistry
 from runtime.application.application import AgentApplication
 from runtime.application.application_config import ApplicationConfig
-from runtime.orchestration import Orchestrator
+from runtime.application.component_registry import ComponentRegistry
+from runtime.orchestration import (
+    Orchestrator,
+    SingleAgentOrchestrator,
+)
 from runtime.persistence import (
-    InMemoryTaskStore,
     PersistenceConfig,
     PersistenceStoreFactory,
 )
@@ -25,6 +28,10 @@ class ApplicationAssembly:
         - manage Application lifecycle
         - implement Agent orchestration
         - manage persistence lifecycle directly
+
+    ApplicationAssembly is responsible for constructing the
+    AgentRegistry and wiring it into the Application and
+    Orchestrator.
     """
 
     def __init__(
@@ -33,9 +40,11 @@ class ApplicationAssembly:
         persistence_config: PersistenceConfig | None = None,
     ) -> None:
         self._config = config
+
         self._persistence_config = (
             persistence_config or PersistenceConfig()
         )
+
         self._components = ComponentRegistry()
         self._agents: list[BaseAgent] = []
 
@@ -104,22 +113,26 @@ class ApplicationAssembly:
             - orchestrator
         """
 
-        self._get_required_component(
+        agent_runtime = self._get_required_component(
             "agent_runtime"
         )
-        self._get_required_component(
+
+        execution_runtime = self._get_required_component(
             "execution_runtime"
         )
 
         publisher = self._get_optional_component(
             "publisher"
         )
+
         middleware = self._get_optional_component(
             "middleware"
         )
+
         session_manager = self._get_optional_component(
             "session_manager"
         )
+
         orchestrator = self._get_optional_component(
             "orchestrator"
         )
@@ -127,12 +140,15 @@ class ApplicationAssembly:
         session_store = self._get_optional_component(
             "session_store"
         )
+
         execution_store = self._get_optional_component(
             "execution_store"
         )
+
         task_store = self._get_optional_component(
             "task_store"
         )
+
         checkpoint_store = self._get_optional_component(
             "checkpoint_store"
         )
@@ -142,12 +158,15 @@ class ApplicationAssembly:
         missing_session_store = (
             session_store is None
         )
+
         missing_execution_store = (
             execution_store is None
         )
+
         missing_task_store = (
             task_store is None
         )
+
         missing_checkpoint_store = (
             checkpoint_store is None
         )
@@ -186,9 +205,7 @@ class ApplicationAssembly:
                 task_store = bundle.task_store
 
             if checkpoint_store is None:
-                checkpoint_store = (
-                    bundle.checkpoint_store
-                )
+                checkpoint_store = bundle.checkpoint_store
 
             owned_persistence_resources = (
                 bundle.resources
@@ -218,18 +235,32 @@ class ApplicationAssembly:
                 "CheckpointStore."
             )
 
+        agent_registry = AgentRegistry(
+            agents=list(self._agents)
+        )
+
+        if orchestrator is None:
+            orchestrator = SingleAgentOrchestrator(
+                agent_registry=agent_registry,
+                agent_runtime=agent_runtime,
+            )
+        elif not isinstance(
+            orchestrator,
+            Orchestrator,
+        ):
+            raise TypeError(
+                "ApplicationAssembly orchestrator must be "
+                "an Orchestrator instance."
+            )
+
         application = AgentApplication(
             application_id=(
                 self._config.application_id
             ),
             name=self._config.name,
-            agent_runtime=self._components.get(
-                "agent_runtime"
-            ),
-            execution_runtime=self._components.get(
-                "execution_runtime"
-            ),
-            agents=list(self._agents),
+            agent_runtime=agent_runtime,
+            execution_runtime=execution_runtime,
+            agent_registry=agent_registry,
             session_manager=session_manager,
             publisher=publisher,
             middleware_chain=middleware,
@@ -238,15 +269,7 @@ class ApplicationAssembly:
             execution_store=execution_store,
             task_store=task_store,
             checkpoint_store=checkpoint_store,
-            orchestrator=(
-                orchestrator
-                if orchestrator is None
-                or isinstance(
-                    orchestrator,
-                    Orchestrator,
-                )
-                else orchestrator
-            ),
+            orchestrator=orchestrator,
             owned_persistence_resources=(
                 owned_persistence_resources
             ),
@@ -261,7 +284,7 @@ class ApplicationAssembly:
         if not self._components.contains(name):
             raise ValueError(
                 f"ApplicationAssembly requires "
-                f"{name} component."
+                f"'{name}' component."
             )
 
         return self._components.get(name)

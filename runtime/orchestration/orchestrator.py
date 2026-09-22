@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
 
 from agents import AgentResult
 from agents.base_agent import BaseAgent
 from models.task_request import TaskRequest
+from runtime.agents.agent_registry import AgentRegistry
 from runtime.checkpoint import Checkpoint
-from runtime.execution import ExecutionHandle
-
-if TYPE_CHECKING:
-    from runtime.application.application import AgentApplication
+from runtime.execution import AgentRuntime, ExecutionHandle
 
 
 class OrchestrationResult:
@@ -50,13 +47,24 @@ class Orchestrator(ABC):
         - persistence
         - AgentRuntime implementation
         - Checkpoint storage
+        - Application lifecycle
     """
 
     def __init__(
         self,
-        application: "AgentApplication",
+        agent_registry: AgentRegistry,
+        agent_runtime: AgentRuntime,
     ) -> None:
-        self._application = application
+        self._agent_registry = agent_registry
+        self._agent_runtime = agent_runtime
+
+    @property
+    def agent_registry(self) -> AgentRegistry:
+        return self._agent_registry
+
+    @property
+    def agent_runtime(self) -> AgentRuntime:
+        return self._agent_runtime
 
     @abstractmethod
     def resolve_entry_agent(self) -> BaseAgent:
