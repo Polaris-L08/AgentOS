@@ -10,7 +10,7 @@ from models.task_result import TaskResult
 from runtime.application.application_lifecycle import (
     ApplicationLifecycleError,
 )
-from runtime.checkpoint import Checkpoint
+from runtime.checkpoint import Checkpoint, CheckpointStore
 from runtime.execution import ExecutionHandle
 from runtime.execution.execution_runtime import ExecutionRuntime
 from runtime.execution.execution import Execution
@@ -20,6 +20,7 @@ from runtime.orchestration import (
     Orchestrator,
     SingleAgentOrchestrator,
 )
+from runtime.persistence import ExecutionStore, TaskStore
 
 
 class ApplicationExecutor:
@@ -54,17 +55,18 @@ class ApplicationExecutor:
     """
 
     def __init__(
-        self,
-        application,
-        execution_runtime: ExecutionRuntime,
-        orchestrator: Orchestrator | None = None,
+            self,
+            execution_runtime: ExecutionRuntime,
+            orchestrator: Orchestrator,
+            execution_store: ExecutionStore,
+            task_store: TaskStore,
+            checkpoint_store: CheckpointStore,
     ) -> None:
-        self._application = application
         self._execution_runtime = execution_runtime
-
-        self._orchestrator = orchestrator or SingleAgentOrchestrator(
-            application=application,
-        )
+        self._orchestrator = orchestrator
+        self._execution_store = execution_store
+        self._task_store = task_store
+        self._checkpoint_store = checkpoint_store
 
     async def execute(
         self,
@@ -178,7 +180,7 @@ class ApplicationExecutor:
                 f"checkpoint={checkpoint.runtime_id}"
             )
 
-        await self._application.checkpoint_store.save(
+        await self._checkpoint_store.save(
             checkpoint_id=checkpoint.checkpoint_id,
             checkpoint=checkpoint,
         )
@@ -358,61 +360,11 @@ class ApplicationExecutor:
         finally:
             await execution_handle.close()
 
-    async def recover_agent_execution(
-        self,
-        checkpoint: Checkpoint,
-        agent_id: str,
-        task: TaskRequest,
-    ) -> AgentResult:
-        """
-        Resume one Agent directly from a Checkpoint.
-
-        This remains a low-level compatibility API.
-
-        Durable Application recovery should use
-        resume_persisted_execution().
-        """
-
-        execution_handle = await self.recover_execution(
-            checkpoint=checkpoint,
-        )
-
-        try:
-            agent = self._application.get_agent(agent_id)
-
-            agent_checkpoint = checkpoint.agents.get(
-                agent.identity.agent_id
-            )
-
-            if agent_checkpoint is None:
-                raise ApplicationLifecycleError(
-                    "Checkpoint does not contain an AgentCheckpoint "
-                    f"for Agent: {agent_id}"
-                )
-
-            agent_execution_context = (
-                self._application.agent_runtime.restore_execution_context(
-                    runtime_context=execution_handle.runtime_context,
-                    agent=agent,
-                    checkpoint=agent_checkpoint,
-                )
-            )
-
-            return await self._application.agent_runtime.execute(
-                agent,
-                task,
-                execution_handle.runtime_context,
-                agent_execution_context,
-            )
-
-        finally:
-            await execution_handle.close()
-
     async def _load_persisted_execution(
         self,
         execution_id: str,
     ) -> Execution:
-        state = await self._application.execution_store.load(
+        state = await self._execution_store.load(
             execution_id
         )
 
@@ -441,7 +393,7 @@ class ApplicationExecutor:
                 f"{execution.execution_id}"
             )
 
-        task = await self._application.task_store.load(
+        task = await self._task_store.load(
             execution.task_id
         )
 
@@ -473,7 +425,7 @@ class ApplicationExecutor:
                 f"{execution.execution_id}"
             )
 
-        checkpoint = await self._application.checkpoint_store.load(
+        checkpoint = await self._checkpoint_store.load(
             checkpoint_id
         )
 
@@ -553,7 +505,7 @@ class ApplicationExecutor:
         Persist the durable representation of a logical Execution.
         """
 
-        await self._application.execution_store.save(
+        await self._execution_store.save(
             execution.snapshot()
         )
 
@@ -565,7 +517,7 @@ class ApplicationExecutor:
         Persist the durable input of the logical Execution.
         """
 
-        await self._application.task_store.save(task)
+        await self._task_store.save(task)
 
     def _to_task_result(
         self,

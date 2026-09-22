@@ -1,18 +1,30 @@
 import asyncio
-from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
-from runtime.application.application_executor import ApplicationExecutor
-from runtime.application.application_lifecycle import ApplicationLifecycleError
+from runtime.application.application_executor import (
+    ApplicationExecutor,
+)
+from runtime.application.application_lifecycle import (
+    ApplicationLifecycleError,
+)
 from runtime.checkpoint import Checkpoint
+from runtime.checkpoint.memory_checkpoint_store import (
+    MemoryCheckpointStore,
+)
 from runtime.context.shared_context import SharedContext
 from runtime.execution.execution import Execution
 from runtime.execution.execution_runtime import ExecutionRuntime
 from runtime.execution.execution_state import ExecutionStatus
+from runtime.orchestration import Orchestrator
+from runtime.persistence.in_memory_execution_store import (
+    InMemoryExecutionStore,
+)
+from runtime.persistence.in_memory_task_store import (
+    InMemoryTaskStore,
+)
 from runtime.tracing.trace_recorder import TraceRecorder
-from runtime.persistence.in_memory_execution_store import InMemoryExecutionStore
-from runtime.checkpoint.memory_checkpoint_store import MemoryCheckpointStore
 
 
 def run_async(coro):
@@ -20,18 +32,30 @@ def run_async(coro):
 
 
 def create_executor():
-    application = SimpleNamespace(
-        execution_store=InMemoryExecutionStore(),
-        checkpoint_store=MemoryCheckpointStore(),
-    )
+    execution_store = InMemoryExecutionStore()
+    task_store = InMemoryTaskStore()
+    checkpoint_store = MemoryCheckpointStore()
 
     execution_runtime = ExecutionRuntime(
         trace_recorder=TraceRecorder(),
     )
 
-    return ApplicationExecutor(
-        application=application,
+    orchestrator = Mock(spec=Orchestrator)
+
+    executor = ApplicationExecutor(
         execution_runtime=execution_runtime,
+        orchestrator=orchestrator,
+        execution_store=execution_store,
+        task_store=task_store,
+        checkpoint_store=checkpoint_store,
+    )
+
+    return (
+        executor,
+        execution_store,
+        task_store,
+        checkpoint_store,
+        orchestrator,
     )
 
 
@@ -41,14 +65,12 @@ def create_paused_execution(
     task_id: str | None = "task-1",
     checkpoint_id: str = "checkpoint-1",
 ) -> Execution:
-    execution = Execution(
+    return Execution(
         execution_id=execution_id,
         task_id=task_id,
         current_checkpoint_id=checkpoint_id,
         status=ExecutionStatus.PAUSED,
     )
-
-    return execution
 
 
 def create_checkpoint(
@@ -66,9 +88,43 @@ def create_checkpoint(
     )
 
 
+def test_executor_does_not_depend_on_application():
+    executor, _, _, _, _ = create_executor()
+
+    assert not hasattr(executor, "_application")
+
+
+def test_executor_stores_explicit_dependencies():
+    (
+        executor,
+        execution_store,
+        task_store,
+        checkpoint_store,
+        orchestrator,
+    ) = create_executor()
+
+    assert executor._execution_store is execution_store
+    assert executor._task_store is task_store
+    assert executor._checkpoint_store is checkpoint_store
+    assert executor._orchestrator is orchestrator
+
+
+def test_executor_does_not_own_agent_runtime():
+    executor, _, _, _, _ = create_executor()
+
+    assert not hasattr(executor, "_agent_runtime")
+    assert not hasattr(executor, "_agent_registry")
+
+
 def test_recover_persisted_execution_successfully():
     async def scenario():
-        executor = create_executor()
+        (
+            executor,
+            execution_store,
+            _,
+            checkpoint_store,
+            _,
+        ) = create_executor()
 
         execution = create_paused_execution(
             execution_id="execution-1",
@@ -82,11 +138,11 @@ def test_recover_persisted_execution_successfully():
             task_id="task-1",
         )
 
-        await executor._application.execution_store.save(
+        await execution_store.save(
             execution.snapshot()
         )
 
-        await executor._application.checkpoint_store.save(
+        await checkpoint_store.save(
             checkpoint.checkpoint_id,
             checkpoint,
         )
@@ -98,15 +154,22 @@ def test_recover_persisted_execution_successfully():
         try:
             assert handle.execution_id == execution.execution_id
             assert handle.runtime_id == checkpoint.runtime_id
-
-            assert handle.execution.execution_id == execution.execution_id
-            assert handle.execution.task_id == execution.task_id
+            assert (
+                handle.execution.execution_id
+                == execution.execution_id
+            )
+            assert (
+                handle.execution.task_id
+                == execution.task_id
+            )
             assert (
                 handle.execution.current_checkpoint_id
                 == checkpoint.checkpoint_id
             )
-            assert handle.execution.status == ExecutionStatus.PAUSED
-
+            assert (
+                handle.execution.status
+                == ExecutionStatus.PAUSED
+            )
             assert (
                 handle.runtime_context.runtime_id
                 == checkpoint.runtime_id
@@ -123,7 +186,13 @@ def test_recover_persisted_execution_successfully():
 
 def test_recover_persisted_execution_preserves_execution_identity():
     async def scenario():
-        executor = create_executor()
+        (
+            executor,
+            execution_store,
+            _,
+            checkpoint_store,
+            _,
+        ) = create_executor()
 
         execution = create_paused_execution(
             execution_id="logical-execution-123",
@@ -137,11 +206,11 @@ def test_recover_persisted_execution_preserves_execution_identity():
             task_id="task-123",
         )
 
-        await executor._application.execution_store.save(
+        await execution_store.save(
             execution.snapshot()
         )
 
-        await executor._application.checkpoint_store.save(
+        await checkpoint_store.save(
             checkpoint.checkpoint_id,
             checkpoint,
         )
@@ -151,15 +220,20 @@ def test_recover_persisted_execution_preserves_execution_identity():
         )
 
         try:
-            # Execution identity belongs to the logical Execution.
-            assert handle.execution_id == "logical-execution-123"
+            assert (
+                handle.execution_id
+                == "logical-execution-123"
+            )
 
-            # Runtime identity belongs to RuntimeContext and is restored
-            # from the checkpoint.
-            assert handle.runtime_id == "runtime-before-crash"
+            assert (
+                handle.runtime_id
+                == "runtime-before-crash"
+            )
 
-            # They are intentionally different identities.
-            assert handle.execution_id != handle.runtime_id
+            assert (
+                handle.execution_id
+                != handle.runtime_id
+            )
         finally:
             await handle.close()
 
@@ -168,7 +242,7 @@ def test_recover_persisted_execution_preserves_execution_identity():
 
 def test_recover_persisted_execution_fails_when_execution_does_not_exist():
     async def scenario():
-        executor = create_executor()
+        executor, _, _, _, _ = create_executor()
 
         with pytest.raises(
             ApplicationLifecycleError,
@@ -183,7 +257,13 @@ def test_recover_persisted_execution_fails_when_execution_does_not_exist():
 
 def test_recover_persisted_execution_fails_when_execution_has_no_checkpoint():
     async def scenario():
-        executor = create_executor()
+        (
+            executor,
+            execution_store,
+            _,
+            _,
+            _,
+        ) = create_executor()
 
         execution = Execution(
             execution_id="execution-no-checkpoint",
@@ -191,7 +271,7 @@ def test_recover_persisted_execution_fails_when_execution_has_no_checkpoint():
             status=ExecutionStatus.PAUSED,
         )
 
-        await executor._application.execution_store.save(
+        await execution_store.save(
             execution.snapshot()
         )
 
@@ -211,7 +291,13 @@ def test_recover_persisted_execution_fails_when_execution_has_no_checkpoint():
 
 def test_recover_persisted_execution_fails_when_checkpoint_does_not_exist():
     async def scenario():
-        executor = create_executor()
+        (
+            executor,
+            execution_store,
+            _,
+            _,
+            _,
+        ) = create_executor()
 
         execution = create_paused_execution(
             execution_id="execution-checkpoint-missing",
@@ -219,15 +305,16 @@ def test_recover_persisted_execution_fails_when_checkpoint_does_not_exist():
             checkpoint_id="checkpoint-missing",
         )
 
-        await executor._application.execution_store.save(
+        await execution_store.save(
             execution.snapshot()
         )
 
         with pytest.raises(
             ApplicationLifecycleError,
             match=(
-                "Checkpoint not found for Execution "
-                "execution-checkpoint-missing: checkpoint-missing"
+                "Checkpoint not found for Execution: "
+                "execution-checkpoint-missing: "
+                "checkpoint-missing"
             ),
         ):
             await executor.recover_persisted_execution(
@@ -239,7 +326,13 @@ def test_recover_persisted_execution_fails_when_checkpoint_does_not_exist():
 
 def test_recover_persisted_execution_fails_when_task_id_does_not_match():
     async def scenario():
-        executor = create_executor()
+        (
+            executor,
+            execution_store,
+            _,
+            checkpoint_store,
+            _,
+        ) = create_executor()
 
         execution = create_paused_execution(
             execution_id="execution-task-mismatch",
@@ -253,11 +346,11 @@ def test_recover_persisted_execution_fails_when_task_id_does_not_match():
             task_id="task-checkpoint",
         )
 
-        await executor._application.execution_store.save(
+        await execution_store.save(
             execution.snapshot()
         )
 
-        await executor._application.checkpoint_store.save(
+        await checkpoint_store.save(
             checkpoint.checkpoint_id,
             checkpoint,
         )
@@ -265,7 +358,8 @@ def test_recover_persisted_execution_fails_when_task_id_does_not_match():
         with pytest.raises(
             ApplicationLifecycleError,
             match=(
-                "Checkpoint task_id does not match Execution task_id: "
+                "Checkpoint task_id does not match "
+                "Execution task_id: "
                 "execution=task-execution, "
                 "checkpoint=task-checkpoint"
             ),
@@ -279,7 +373,13 @@ def test_recover_persisted_execution_fails_when_task_id_does_not_match():
 
 def test_recover_persisted_execution_restores_shared_context():
     async def scenario():
-        executor = create_executor()
+        (
+            executor,
+            execution_store,
+            _,
+            checkpoint_store,
+            _,
+        ) = create_executor()
 
         execution = create_paused_execution(
             execution_id="execution-shared-context",
@@ -297,16 +397,17 @@ def test_recover_persisted_execution_restores_shared_context():
             "research.status",
             "completed",
         )
+
         checkpoint.shared_context.set(
             "risk.score",
             0.25,
         )
 
-        await executor._application.execution_store.save(
+        await execution_store.save(
             execution.snapshot()
         )
 
-        await executor._application.checkpoint_store.save(
+        await checkpoint_store.save(
             checkpoint.checkpoint_id,
             checkpoint,
         )
@@ -337,7 +438,13 @@ def test_recover_persisted_execution_restores_shared_context():
 
 def test_recover_persisted_execution_creates_new_trace():
     async def scenario():
-        executor = create_executor()
+        (
+            executor,
+            execution_store,
+            _,
+            checkpoint_store,
+            _,
+        ) = create_executor()
 
         execution = create_paused_execution(
             execution_id="execution-trace",
@@ -351,11 +458,11 @@ def test_recover_persisted_execution_creates_new_trace():
             task_id="task-trace",
         )
 
-        await executor._application.execution_store.save(
+        await execution_store.save(
             execution.snapshot()
         )
 
-        await executor._application.checkpoint_store.save(
+        await checkpoint_store.save(
             checkpoint.checkpoint_id,
             checkpoint,
         )
@@ -378,6 +485,47 @@ def test_recover_persisted_execution_creates_new_trace():
             assert (
                 handle.runtime_context.trace.trace.all_spans()[0].name
                 == "agent.resume"
+            )
+        finally:
+            await handle.close()
+
+    run_async(scenario())
+
+
+def test_recover_execution_does_not_require_application():
+    async def scenario():
+        (
+            executor,
+            _,
+            _,
+            _,
+            _,
+        ) = create_executor()
+
+        checkpoint = create_checkpoint(
+            checkpoint_id="checkpoint-low-level",
+            runtime_id="runtime-low-level",
+            task_id="task-low-level",
+        )
+
+        handle = await executor.recover_execution(
+            checkpoint=checkpoint
+        )
+
+        try:
+            assert (
+                handle.runtime_id
+                == "runtime-low-level"
+            )
+
+            assert (
+                handle.execution.task_id
+                == "task-low-level"
+            )
+
+            assert (
+                handle.execution.status
+                == ExecutionStatus.PAUSED
             )
         finally:
             await handle.close()

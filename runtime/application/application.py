@@ -146,9 +146,11 @@ class AgentApplication:
         self._state = ApplicationState.CREATED
 
         self._executor = ApplicationExecutor(
-            application=self,
             execution_runtime=self.execution_runtime,
             orchestrator=self._orchestrator,
+            execution_store=self.execution_store,
+            task_store=self.task_store,
+            checkpoint_store=self.checkpoint_store,
         )
 
     # ------------------------------------------------------------------
