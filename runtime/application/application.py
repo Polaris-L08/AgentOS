@@ -59,8 +59,6 @@ class AgentApplication:
     implement Agent execution logic itself.
 
     Agent registration and lookup are delegated to AgentRegistry.
-    The existing add_agent(), get_agent(), has_agent(), and agents
-    APIs remain as Application-level facade methods for compatibility.
     """
 
     def __init__(
@@ -407,6 +405,9 @@ class AgentApplication:
 
         Orchestrators must call AgentRuntime directly rather than
         calling this Application facade.
+
+        是 Application 层提供的“显式指定 Agent 的直接调用 Facade”，主要服务于外部直接调用、测试、调试等场景；
+        它不是 Orchestration 机制，也不是 AgentOS Runtime 的核心执行入口。
         """
 
         self._require_state(ApplicationState.RUNNING)
