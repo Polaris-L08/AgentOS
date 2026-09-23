@@ -2007,3 +2007,64 @@ resume Execution
 | `Execution`                         | entry agent metadata                  | 保留                           |
 | `Checkpoint`                        | 无 execution_id                       | 保持不变                       |
 
+### Architecture Freeze
+
+```text
+                    ApplicationAssembly
+                           │
+                    Composition Root
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+    AgentRegistry     Orchestrator      Persistence
+          │                │                │
+          │                ▼                │
+          │          AgentRuntime            │
+          │                │                │
+          └────────────────┼────────────────┘
+                           │
+                           ▼
+                  AgentApplication
+                           │
+                           ▼
+                 ApplicationExecutor
+                           │
+                           ▼
+                    Orchestrator
+                           │
+                           ▼
+                     AgentRuntime
+                           │
+                           ▼
+                         Agent
+```
+
+最重要的依赖规则：
+
+```text
+ApplicationAssembly
+    ↓
+负责创建和组装对象
+
+AgentApplication
+    ↓
+负责 Application 生命周期和 Facade
+
+ApplicationExecutor
+    ↓
+负责 Application Execution orchestration
+
+Orchestrator
+    ↓
+负责 Agent orchestration
+
+AgentRuntime
+    ↓
+负责实际 Agent execution
+
+Agent
+    ↓
+负责具体 Agent behavior
+```
+
