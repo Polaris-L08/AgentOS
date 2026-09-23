@@ -11,6 +11,7 @@ from runtime.events.event_bus import EventBus
 from runtime.execution.agent_runtime import AgentRuntime
 from runtime.execution.execution_runtime import ExecutionRuntime
 from runtime.middleware.middleware_chain import MiddlewareChain
+from runtime.orchestration import SingleAgentOrchestrator
 from runtime.persistence.in_memory_execution_store import (
     InMemoryExecutionStore,
 )
@@ -403,14 +404,24 @@ def test_assembly_can_use_mixed_explicit_and_configured_stores():
 
 @pytest.mark.asyncio
 async def test_assembled_application_can_invoke_agent():
-    agent_runtime, execution_runtime, _ = create_runtime_components()
+    from runtime.execution.execution import Execution
+
+    agent_runtime, execution_runtime, _ = (
+        create_runtime_components()
+    )
 
     agent = create_agent("agent-1")
 
     application = (
         ApplicationAssembly(create_config())
-        .register_component("agent_runtime", agent_runtime)
-        .register_component("execution_runtime", execution_runtime)
+        .register_component(
+            "agent_runtime",
+            agent_runtime,
+        )
+        .register_component(
+            "execution_runtime",
+            execution_runtime,
+        )
         .add_agent(agent)
         .build()
     )
@@ -418,11 +429,21 @@ async def test_assembled_application_can_invoke_agent():
     await application.initialize()
     await application.start()
 
-    execution_handle = execution_runtime.create_execution()
-
     task = TaskRequest(
         task_id="task-1",
         user_input="hello",
+    )
+
+    execution = Execution(
+        execution_id="execution-1",
+        task_id=task.task_id,
+        session_id=task.session_id,
+    )
+
+    execution_handle = (
+        execution_runtime.create_execution(
+            execution
+        )
     )
 
     result = await application.invoke_agent(
@@ -461,6 +482,40 @@ def test_assembly_wires_shared_agent_registry_into_orchestrator():
 
     assert application.agent_registry is not None
     assert application.orchestrator is not None
+
+    assert (
+        application.orchestrator.agent_registry
+        is application.agent_registry
+    )
+
+    assert (
+        application.orchestrator.agent_runtime
+        is application.agent_runtime
+    )
+
+
+def test_assembly_creates_default_orchestrator_when_not_registered():
+    agent_runtime, execution_runtime, _ = (
+        create_runtime_components()
+    )
+
+    application = (
+        ApplicationAssembly(create_config())
+        .register_component(
+            "agent_runtime",
+            agent_runtime,
+        )
+        .register_component(
+            "execution_runtime",
+            execution_runtime,
+        )
+        .build()
+    )
+
+    assert isinstance(
+        application.orchestrator,
+        SingleAgentOrchestrator,
+    )
 
     assert (
         application.orchestrator.agent_registry

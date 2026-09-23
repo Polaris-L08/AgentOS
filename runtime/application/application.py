@@ -13,7 +13,6 @@ from runtime.application.application_lifecycle import (
 from runtime.checkpoint import (
     Checkpoint,
     CheckpointStore,
-    MemoryCheckpointStore,
 )
 from runtime.events.event import Event
 from runtime.events.publisher import EventPublisher
@@ -21,13 +20,9 @@ from runtime.middleware.middleware_chain import MiddlewareChain
 from runtime.middleware.runtime_operation import RuntimeOperation
 from runtime.orchestration import (
     Orchestrator,
-    SingleAgentOrchestrator,
 )
 from runtime.persistence import (
     ExecutionStore,
-    InMemoryExecutionStore,
-    InMemorySessionStore,
-    InMemoryTaskStore,
     SessionStore,
     TaskStore,
 )
@@ -69,60 +64,47 @@ class AgentApplication:
     """
 
     def __init__(
-        self,
-        application_id: str,
-        name: str,
-        agent_runtime: AgentRuntime,
-        execution_runtime: ExecutionRuntime,
-        agent_registry: AgentRegistry | None = None,
-        session_manager: SessionManager | None = None,
-        publisher: EventPublisher | None = None,
-        middleware_chain: MiddlewareChain | None = None,
-        components: tuple[tuple[str, Any], ...] | None = None,
-        session_store: SessionStore | None = None,
-        execution_store: ExecutionStore | None = None,
-        task_store: TaskStore | None = None,
-        checkpoint_store: CheckpointStore | None = None,
-        orchestrator: Orchestrator | None = None,
-        owned_persistence_resources: tuple[
-            PostgresDatabase,
-            ...,
-        ] | None = None,
+            self,
+            application_id: str,
+            name: str,
+            agent_runtime: AgentRuntime,
+            execution_runtime: ExecutionRuntime,
+            agent_registry: AgentRegistry,
+            session_manager: SessionManager,
+            publisher: EventPublisher | None,
+            middleware_chain: MiddlewareChain | None,
+            components: tuple[tuple[str, Any], ...],
+            session_store: SessionStore,
+            execution_store: ExecutionStore,
+            task_store: TaskStore,
+            checkpoint_store: CheckpointStore,
+            orchestrator: Orchestrator,
+            owned_persistence_resources: tuple[
+                PostgresDatabase,
+                ...,
+            ],
     ) -> None:
         self.application_id = application_id
         self.name = name
         self.agent_runtime = agent_runtime
         self.execution_runtime = execution_runtime
 
-        self.session_manager = (
-            session_manager or SessionManager()
-        )
+        self.session_manager = session_manager
 
-        self.session_store = (
-            session_store or InMemorySessionStore()
-        )
+        self.session_store = session_store
+        self.execution_store = execution_store
+        self.task_store = task_store
+        self.checkpoint_store = checkpoint_store
 
-        self.execution_store = (
-            execution_store or InMemoryExecutionStore()
-        )
-
-        self.task_store = (
-            task_store or InMemoryTaskStore()
-        )
-
-        self.checkpoint_store = (
-            checkpoint_store or MemoryCheckpointStore()
-        )
-
-        self._owned_persistence_resources = tuple(
-            owned_persistence_resources or ()
+        self._owned_persistence_resources = (
+            owned_persistence_resources
         )
         self._persistence_resources_closed = False
 
         self._publisher = publisher
         self._middleware_chain = middleware_chain
 
-        self._components = tuple(components or ())
+        self._components = components
 
         self._initialized_components: list[
             tuple[str, ApplicationComponent]
@@ -132,16 +114,7 @@ class AgentApplication:
             tuple[str, ApplicationComponent]
         ] = []
 
-        self._agent_registry = (
-            agent_registry or AgentRegistry()
-        )
-
-        if orchestrator is None:
-            orchestrator = SingleAgentOrchestrator(
-                agent_registry=self._agent_registry,
-                agent_runtime=self.agent_runtime,
-            )
-
+        self._agent_registry = agent_registry
         self._orchestrator = orchestrator
         self._state = ApplicationState.CREATED
 
@@ -174,7 +147,7 @@ class AgentApplication:
         return self._agent_registry
 
     @property
-    def orchestrator(self) -> Orchestrator | None:
+    def orchestrator(self) -> Orchestrator:
         return self._orchestrator
 
     # ------------------------------------------------------------------

@@ -15,6 +15,7 @@ from runtime.persistence import (
     PersistenceConfig,
     PersistenceStoreFactory,
 )
+from runtime.session import SessionManager
 
 
 class ApplicationAssembly:
@@ -98,6 +99,19 @@ class ApplicationAssembly:
         """
         Build an AgentApplication from assembled components.
 
+        ApplicationAssembly is the Composition Root.
+
+        It is responsible for:
+            - resolving required runtime components
+            - creating default infrastructure components
+            - creating the AgentRegistry
+            - creating the default Orchestrator
+            - creating persistence stores
+            - injecting all dependencies into AgentApplication
+
+        AgentApplication receives fully assembled dependencies and
+        does not create runtime infrastructure by itself.
+
         Required components:
             - agent_runtime
             - execution_runtime
@@ -133,6 +147,9 @@ class ApplicationAssembly:
             "session_manager"
         )
 
+        if session_manager is None:
+            session_manager = SessionManager()
+
         orchestrator = self._get_optional_component(
             "orchestrator"
         )
@@ -156,26 +173,26 @@ class ApplicationAssembly:
         owned_persistence_resources = ()
 
         missing_session_store = (
-            session_store is None
+                session_store is None
         )
 
         missing_execution_store = (
-            execution_store is None
+                execution_store is None
         )
 
         missing_task_store = (
-            task_store is None
+                task_store is None
         )
 
         missing_checkpoint_store = (
-            checkpoint_store is None
+                checkpoint_store is None
         )
 
         if (
-            missing_session_store
-            or missing_execution_store
-            or missing_task_store
-            or missing_checkpoint_store
+                missing_session_store
+                or missing_execution_store
+                or missing_task_store
+                or missing_checkpoint_store
         ):
             bundle = (
                 PersistenceStoreFactory.create_store_bundle(
@@ -245,8 +262,8 @@ class ApplicationAssembly:
                 agent_runtime=agent_runtime,
             )
         elif not isinstance(
-            orchestrator,
-            Orchestrator,
+                orchestrator,
+                Orchestrator,
         ):
             raise TypeError(
                 "ApplicationAssembly orchestrator must be "
